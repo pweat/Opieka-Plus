@@ -20,7 +20,7 @@ interface UserProfile {
   createdAt: Date;
 }
 
-const HomeScreen = () => {
+const HomeScreen = ({ navigation }: { navigation: any }) => {
   // Stan do przechowywania informacji o tym, czy dane się ładują
   const [loading, setLoading] = useState(true);
   // Stan do przechowywania profilu użytkownika pobranego z Firestore
@@ -99,9 +99,7 @@ const HomeScreen = () => {
           </Text>
           <Button
             title="+ Dodaj profil podopiecznego"
-            onPress={() => {
-              /* Tę funkcję dodamy za chwilę */
-            }}
+            onPress={() => navigation.navigate("AddPatient")}
           />
         </View>
       ) : (

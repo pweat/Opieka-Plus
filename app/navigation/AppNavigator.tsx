@@ -1,6 +1,7 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import HomeScreen from "../screens/HomeScreen";
+import AddPatientScreen from "../screens/AddPatientScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -10,9 +11,14 @@ const AppNavigator = () => {
       <Stack.Screen
         name="Home"
         component={HomeScreen}
-        options={{ title: "Panel Główny" }}
+        options={{ headerShown: false }}
       />
-      {/* W przyszłości dodamy tu inne ekrany, np. "Profil Podopiecznego" */}
+      {/* 2. Dodaj nowy ekran. Ustawiamy tytuł, który pokaże się na górze. */}
+      <Stack.Screen
+        name="AddPatient"
+        component={AddPatientScreen}
+        options={{ title: "Dodaj podopiecznego" }}
+      />
     </Stack.Navigator>
   );
 };
