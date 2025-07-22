@@ -1,45 +1,55 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, Button, StyleSheet, Alert } from "react-native";
-// Importujemy nasze skonfigurowane 'auth' z Firebase oraz funkcję do tworzenia użytkownika
-import { auth } from "../../firebaseConfig"; // Zwróć uwagę na '../../' - wychodzimy dwa poziomy wyżej z folderu /app/screens
+// Dodajemy importy z Firestore
+import { auth, db } from "../../firebaseConfig";
 import { createUserWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore"; // Import funkcji do zapisu w bazie
 
-const RegisterScreen = ({ navigation }: { navigation: any }) => {
-  // Tworzymy "stan" (pudełka w pamięci) do przechowywania wartości z pól tekstowych.
-  // Za każdym razem, gdy użytkownik coś wpisze, będziemy aktualizować te zmienne.
+// Modyfikujemy definicję, aby przyjmowała "route" - tam będzie nasza rola
+const RegisterScreen = ({
+  route,
+  navigation,
+}: {
+  route: any;
+  navigation: any;
+}) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  // Odbieramy wybraną rolę przekazaną z poprzedniego ekranu
+  const { selectedRole } = route.params;
 
-  // Funkcja, która zostanie wywołana po naciśnięciu przycisku "Zarejestruj"
   const handleRegister = async () => {
-    // 1. Prosta walidacja danych
-    if (!email || !password || !confirmPassword) {
-      Alert.alert("Błąd", "Wszystkie pola są wymagane.");
-      return;
-    }
-    if (password !== confirmPassword) {
-      Alert.alert("Błąd", "Hasła nie są takie same.");
+    if (!email || !password || password !== confirmPassword) {
+      Alert.alert(
+        "Błąd",
+        "Sprawdź, czy wszystkie pola są wypełnione i czy hasła są identyczne."
+      );
       return;
     }
 
-    // 2. Próba utworzenia użytkownika w Firebase
     try {
-      // Używamy funkcji z biblioteki Firebase, przekazując jej nasz obiekt 'auth' oraz dane użytkownika
+      // Krok 1: Utwórz użytkownika w Firebase Authentication
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         email,
         password
       );
-      // Jeśli się udało, userCredential zawiera informacje o nowym użytkowniku
-      console.log("Użytkownik zarejestrowany!", userCredential.user);
+      const user = userCredential.user;
+
+      // Krok 2: Zapisz dodatkowe informacje o użytkowniku w Firestore
+      // Tworzymy dokument w kolekcji "users" o ID takim samym jak UID użytkownika z Auth
+      await setDoc(doc(db, "users", user.uid), {
+        uid: user.uid,
+        email: user.email,
+        role: selectedRole, // Zapisujemy wybraną rolę!
+        createdAt: new Date(), // Zapisujemy datę utworzenia konta
+      });
+
       Alert.alert("Sukces!", "Konto zostało pomyślnie utworzone.");
-      // Przekierowujemy użytkownika na ekran logowania
-      navigation.navigate("Login");
+      //navigation.navigate("Login");
     } catch (error: any) {
-      // 3. Obsługa błędów z Firebase
-      console.error(error);
-      // Firebase zwraca przydatne komunikaty błędów, które możemy pokazać użytkownikowi
+      // ... obsługa błędów pozostaje bez zmian
       if (error.code === "auth/email-already-in-use") {
         Alert.alert("Błąd", "Ten adres email jest już zajęty.");
       } else if (error.code === "auth/weak-password") {
@@ -54,24 +64,26 @@ const RegisterScreen = ({ navigation }: { navigation: any }) => {
   };
 
   return (
+    // ... cała reszta komponentu (TextInputy, Button) pozostaje bez zmian
     <View style={styles.container}>
-      <Text style={styles.title}>Stwórz nowe konto</Text>
-
-      {/* TextInput to pole do wpisywania tekstu */}
+      <Text style={styles.title}>
+        Stwórz konto jako{" "}
+        {selectedRole === "opiekun_glowny" ? "Opiekun Główny" : "Opiekun"}
+      </Text>
       <TextInput
         style={styles.input}
         placeholder="Adres e-mail"
-        value={email} // Wartość pola jest powiązana z naszym stanem 'email'
-        onChangeText={setEmail} // Każda zmiana w polu aktualizuje stan 'email'
-        keyboardType="email-address" // Pokazuje klawiaturę zoptymalizowaną pod e-mail
-        autoCapitalize="none" // Wyłącza automatyczne wielkie litery
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        keyboardType="email-address"
       />
       <TextInput
         style={styles.input}
         placeholder="Hasło (min. 6 znaków)"
         value={password}
         onChangeText={setPassword}
-        secureTextEntry // Ukrywa wpisywany tekst (wyświetla kropki)
+        secureTextEntry
       />
       <TextInput
         style={styles.input}
@@ -80,13 +92,13 @@ const RegisterScreen = ({ navigation }: { navigation: any }) => {
         onChangeText={setConfirmPassword}
         secureTextEntry
       />
-
       <Button title="Zarejestruj się" onPress={handleRegister} />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  // ... style bez zmian
   container: {
     flex: 1,
     justifyContent: "center",
@@ -97,6 +109,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "bold",
     marginBottom: 20,
+    textAlign: "center",
   },
   input: {
     width: "100%",

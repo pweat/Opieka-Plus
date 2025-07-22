@@ -1,5 +1,6 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import RoleSelectionScreen from "../screens/RoleSelectionScreen";
 
 import WelcomeScreen from "../screens/WelcomeScreen";
 import LoginScreen from "../screens/LoginScreen";
@@ -14,6 +15,7 @@ const AuthNavigator = () => {
       screenOptions={{ headerShown: false }}
     >
       <Stack.Screen name="Welcome" component={WelcomeScreen} />
+      <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Register" component={RegisterScreen} />
     </Stack.Navigator>

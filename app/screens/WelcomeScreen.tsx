@@ -18,7 +18,7 @@ const WelcomeScreen = ({ navigation }: { navigation: any }) => {
         />
         <Button
           title="Zarejestruj się"
-          onPress={() => navigation.navigate("Register")}
+          onPress={() => navigation.navigate("RoleSelection")}
         />
       </View>
     </SafeAreaView>
