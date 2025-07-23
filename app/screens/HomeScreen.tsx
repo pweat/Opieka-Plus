@@ -6,64 +6,78 @@ import {
   StyleSheet,
   ActivityIndicator,
   FlatList,
+  TouchableOpacity,
 } from "react-native";
-// Importujemy potrzebne funkcje i obiekty
 import { auth, db } from "../../firebaseConfig";
 import { signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  getDoc,
+} from "firebase/firestore";
+import { useIsFocused } from "@react-navigation/native";
 
-// Definiujemy typ dla naszego profilu użytkownika, dla porządku w kodzie
 interface UserProfile {
   uid: string;
   email: string;
   role: "opiekun_glowny" | "opiekun";
-  createdAt: Date;
+}
+interface PatientProfile {
+  id: string;
+  name: string;
+  description: string;
 }
 
 const HomeScreen = ({ navigation }: { navigation: any }) => {
-  // Stan do przechowywania informacji o tym, czy dane się ładują
   const [loading, setLoading] = useState(true);
-  // Stan do przechowywania profilu użytkownika pobranego z Firestore
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [patients, setPatients] = useState<PatientProfile[]>([]);
 
-  // Ten 'useEffect' uruchomi się tylko raz, gdy ekran się załaduje.
-  // Jego zadaniem jest pobranie danych o zalogowanym użytkowniku.
+  const isFocused = useIsFocused();
+
   useEffect(() => {
-    const fetchUserProfile = async () => {
-      const user = auth.currentUser; // Pobieramy aktualnego użytkownika z Authentication
-      if (user) {
-        // Tworzymy referencję do dokumentu użytkownika w kolekcji "users"
-        const userDocRef = doc(db, "users", user.uid);
-        // Pobieramy dane tego dokumentu
-        const userDoc = await getDoc(userDocRef);
-
-        if (userDoc.exists()) {
-          // Jeśli dokument istnieje, zapisujemy jego dane w naszym stanie
-          setUserProfile(userDoc.data() as UserProfile);
-        } else {
-          console.error(
-            "Nie znaleziono danych profilu użytkownika w Firestore!"
-          );
-          // Można by tu obsłużyć błąd, np. wylogowując użytkownika
-        }
-      }
-      setLoading(false); // Kończymy ładowanie
-    };
-
-    fetchUserProfile();
-  }, []); // Pusta tablica `[]` gwarantuje jednorazowe uruchomienie
-
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error("Błąd podczas wylogowywania:", error);
+    if (isFocused) {
+      fetchData();
     }
+  }, [isFocused]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    const user = auth.currentUser;
+    if (user) {
+      const userDocRef = doc(db, "users", user.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      if (userDoc.exists()) {
+        const profile = userDoc.data() as UserProfile;
+        setUserProfile(profile);
+
+        if (profile.role === "opiekun_glowny") {
+          const q = query(
+            collection(db, "patients"),
+            where("ownerId", "==", user.uid)
+          );
+          const querySnapshot = await getDocs(q);
+          const patientsList: PatientProfile[] = [];
+          querySnapshot.forEach((doc) => {
+            patientsList.push({ id: doc.id, ...doc.data() } as PatientProfile);
+          });
+          setPatients(patientsList);
+        }
+      } else {
+        console.log("No such user document!");
+      }
+    }
+    setLoading(false);
   };
 
-  // --- Renderowanie komponentu ---
+  const handleLogout = () => {
+    signOut(auth);
+  };
 
-  // 1. Jeśli dane się jeszcze ładują, pokazujemy wskaźnik ładowania
   if (loading) {
     return (
       <View style={styles.container}>
@@ -72,48 +86,48 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     );
   }
 
-  // 2. Jeśli nie udało się pobrać profilu, pokazujemy błąd
-  if (!userProfile) {
-    return (
-      <View style={styles.container}>
-        <Text>Nie udało się załadować profilu.</Text>
-        <Button title="Wyloguj się" onPress={handleLogout} />
-      </View>
-    );
-  }
-
-  // 3. Jeśli wszystko się udało, renderujemy widok na podstawie roli użytkownika
   return (
     <View style={styles.container}>
-      <Text style={styles.welcomeText}>Witaj, {userProfile.email}!</Text>
+      <Text style={styles.welcomeText}>Witaj, {userProfile?.email}!</Text>
 
-      {userProfile.role === "opiekun_glowny" ? (
-        // Widok dla Opiekuna Głównego
+      {userProfile?.role === "opiekun_glowny" ? (
         <View style={styles.content}>
-          <Text style={styles.infoText}>
-            Zarządzaj profilami swoich podopiecznych.
-          </Text>
-          {/* Na razie wyświetlamy tylko tekst, później będzie tu lista */}
-          <Text style={styles.emptyListText}>
-            Nie masz jeszcze żadnych podopiecznych.
-          </Text>
+          <Text style={styles.infoText}>Twoi podopieczni</Text>
+          <FlatList
+            data={patients}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity style={styles.patientCard}>
+                <Text style={styles.patientName}>{item.name}</Text>
+                <Text style={styles.patientDescription}>
+                  {item.description}
+                </Text>
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={
+              <Text style={styles.emptyListText}>
+                Brak podopiecznych. Dodaj pierwszy profil.
+              </Text>
+            }
+            style={styles.list}
+          />
           <Button
             title="+ Dodaj profil podopiecznego"
             onPress={() => navigation.navigate("AddPatient")}
           />
         </View>
       ) : (
-        // Widok dla Opiekuna
         <View style={styles.content}>
           <Text style={styles.infoText}>Twój harmonogram pracy.</Text>
-          {/* Na razie wyświetlamy tylko tekst, później będzie tu harmonogram */}
           <Text style={styles.emptyListText}>
             Nie masz jeszcze zaplanowanych wizyt.
           </Text>
         </View>
       )}
 
-      <Button title="Wyloguj się" onPress={handleLogout} />
+      <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+        <Text style={styles.logoutText}>Wyloguj się</Text>
+      </TouchableOpacity>
     </View>
   );
 };
@@ -121,33 +135,47 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
     padding: 20,
+    paddingTop: 80,
+    backgroundColor: "#f0f0f0",
   },
-  content: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    width: "100%",
-  },
+  content: { flex: 1, width: "100%" },
   welcomeText: {
-    fontSize: 18,
+    fontSize: 16,
     position: "absolute",
-    top: 60,
+    top: 50,
+    alignSelf: "center",
     color: "gray",
   },
   infoText: {
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: "bold",
     textAlign: "center",
     marginBottom: 20,
+    color: "#333",
   },
   emptyListText: {
     fontSize: 16,
     color: "gray",
-    marginBottom: 20,
+    textAlign: "center",
+    marginTop: 50,
   },
+  list: { width: "100%" },
+  patientCard: {
+    backgroundColor: "white",
+    padding: 20,
+    borderRadius: 10,
+    marginBottom: 15,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  patientName: { fontSize: 18, fontWeight: "bold", color: "#444" },
+  patientDescription: { fontSize: 14, color: "#666", marginTop: 5 },
+  logoutButton: { padding: 10, alignSelf: "center", marginBottom: 20 },
+  logoutText: { color: "red", fontSize: 16 },
 });
 
 export default HomeScreen;
