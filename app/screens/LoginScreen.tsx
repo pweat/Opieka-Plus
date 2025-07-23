@@ -25,7 +25,6 @@ const LoginScreen = ({ navigation }: { navigation: any }) => {
         password
       );
       console.log("Zalogowano pomyślnie!", userCredential.user);
-      Alert.alert("Sukces!", "Zalogowano pomyślnie!");
       // Na razie po zalogowaniu nic więcej się nie dzieje.
       // W następnym kroku zbudujemy logikę, która przeniesie nas do głównej części aplikacji.
     } catch (error: any) {
@@ -60,13 +59,16 @@ const LoginScreen = ({ navigation }: { navigation: any }) => {
         onChangeText={setPassword}
         secureTextEntry
       />
-      <Button title="Zaloguj się" onPress={handleLogin} />
-      {/* Przycisk do nawigacji na ekran rejestracji dla nowych użytkowników */}
-      <Button
-        title="Nie masz konta? Zarejestruj się"
-        onPress={() => navigation.navigate("Register")}
-        color="gray" // Zmieniamy kolor, aby odróżnić go od głównej akcji
-      />
+      <View style={styles.buttonContainer}>
+        <Button title="Zaloguj się" onPress={handleLogin} />
+      </View>
+      <View style={styles.buttonContainer}>
+        <Button
+          title="Nie masz konta? Zarejestruj się"
+          onPress={() => navigation.navigate("RoleSelection")}
+          color="gray"
+        />
+      </View>
     </View>
   );
 };
@@ -91,6 +93,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 10,
     marginBottom: 15,
+  },
+  buttonContainer: {
+    width: "100%",
+    marginTop: 10, // Tylko margines na górze
   },
 });
 

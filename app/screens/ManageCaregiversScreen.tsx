@@ -36,7 +36,9 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
       <Text style={styles.title}>Opiekunowie tego profilu</Text>
       {/* W przyszłości będzie tu lista przypisanych opiekunów */}
       <Text style={styles.emptyText}>Brak przypisanych opiekunów.</Text>
-      <Button title="Zaproś nowego Opiekuna" onPress={generateInviteCode} />
+      <View style={styles.buttonContainer}>
+        <Button title="Zaproś nowego Opiekuna" onPress={generateInviteCode} />
+      </View>
     </View>
   );
 };
@@ -45,6 +47,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 20 },
   title: { fontSize: 22, fontWeight: "bold", marginBottom: 20 },
   emptyText: { color: "gray", fontStyle: "italic", marginBottom: 20 },
+  buttonContainer: {
+    width: "100%",
+    marginTop: 10,
+  },
 });
 
 export default ManageCaregiversScreen;

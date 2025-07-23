@@ -56,7 +56,9 @@ const AddPatientScreen = ({ navigation }: { navigation: any }) => {
         onChangeText={setDescription}
         multiline={true} // Pozwalamy na wpisywanie wielu linii tekstu
       />
-      <Button title="Zapisz profil" onPress={handleSaveProfile} />
+      <View style={styles.buttonContainer}>
+        <Button title="Zapisz profil" onPress={handleSaveProfile} />
+      </View>
     </View>
   );
 };
@@ -77,6 +79,10 @@ const styles = StyleSheet.create({
     height: 100, // Wyższe pole dla opisu
     textAlignVertical: "top", // Zaczynamy pisać od góry
     paddingTop: 10,
+  },
+  buttonContainer: {
+    width: "100%",
+    marginTop: 10,
   },
 });
 

@@ -4,6 +4,7 @@ import HomeScreen from "../screens/HomeScreen";
 import AddPatientScreen from "../screens/AddPatientScreen";
 import PatientDetailScreen from "../screens/PatientDetailScreen";
 import ManageCaregiversScreen from "../screens/ManageCaregiversScreen";
+import ScheduleVisitScreen from "../screens/ScheduleVisitScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -29,6 +30,11 @@ const AppNavigator = () => {
         name="AddPatient"
         component={AddPatientScreen}
         options={{ title: "Dodaj podopiecznego" }}
+      />
+      <Stack.Screen
+        name="ScheduleVisit"
+        component={ScheduleVisitScreen}
+        options={{ title: "Zaplanuj Wizytę" }}
       />
     </Stack.Navigator>
   );

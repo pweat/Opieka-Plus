@@ -92,7 +92,9 @@ const RegisterScreen = ({
         onChangeText={setConfirmPassword}
         secureTextEntry
       />
-      <Button title="Zarejestruj się" onPress={handleRegister} />
+      <View style={styles.buttonContainer}>
+        <Button title="Zarejestruj się" onPress={handleRegister} />
+      </View>
     </View>
   );
 };
@@ -119,6 +121,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 10,
     marginBottom: 15,
+  },
+  buttonContainer: {
+    width: "100%",
+    marginTop: 10,
   },
 });
 

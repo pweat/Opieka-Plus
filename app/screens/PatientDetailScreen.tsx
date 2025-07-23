@@ -61,6 +61,20 @@ const PatientDetailScreen = ({
           navigation.navigate("ManageCaregivers", { patientId: patient.id })
         }
       />
+      <View style={styles.buttonRow}>
+        <Button
+          title="Zaplanuj Wizytę"
+          onPress={() =>
+            navigation.navigate("ScheduleVisit", { patientId: patient.id })
+          }
+        />
+        <Button
+          title="Zarządzaj Opiekunami"
+          onPress={() =>
+            navigation.navigate("ManageCaregivers", { patientId: patient.id })
+          }
+        />
+      </View>
     </View>
   );
 };
@@ -69,6 +83,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 20 },
   name: { fontSize: 28, fontWeight: "bold", marginBottom: 10 },
   description: { fontSize: 16, color: "gray", marginBottom: 30 },
+  buttonRow: {
+    flexDirection: "row", // Ustawia elementy w rzędzie, a nie w kolumnie
+    justifyContent: "space-around", // Rozkłada elementy równomiernie wzdłuż osi
+    width: "100%", // Kontener ma zająć całą szerokość
+    marginTop: 30, // Dodaje margines od góry, by oddzielić od opisu
+  },
 });
 
 export default PatientDetailScreen;

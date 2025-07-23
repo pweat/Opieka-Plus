@@ -10,16 +10,19 @@ const WelcomeScreen = ({ navigation }: { navigation: any }) => {
         Witaj w aplikacji, która ułatwia opiekę.
       </Text>
 
-      <View style={styles.buttonContainer}>
-        {/* Używamy navigation.navigate() do przejścia na inny ekran */}
-        <Button
-          title="Zaloguj się"
-          onPress={() => navigation.navigate("Login")}
-        />
-        <Button
-          title="Zarejestruj się"
-          onPress={() => navigation.navigate("RoleSelection")}
-        />
+      <View style={styles.buttonsWrapper}>
+        <View style={styles.buttonContainer}>
+          <Button
+            title="Zaloguj się"
+            onPress={() => navigation.navigate("Login")}
+          />
+        </View>
+        <View style={styles.buttonContainer}>
+          <Button
+            title="Zarejestruj się"
+            onPress={() => navigation.navigate("RoleSelection")}
+          />
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -40,7 +43,14 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 50,
   },
-  buttonContainer: {},
+  buttonsWrapper: {
+    // Nowy styl dla całego bloku przycisków
+    width: "90%",
+  },
+  buttonContainer: {
+    // Zmieniony styl
+    marginVertical: 8, // Dodaje 8 jednostek marginesu na górze i na dole
+  },
 });
 
 export default WelcomeScreen;
