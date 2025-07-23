@@ -2,6 +2,8 @@ import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import HomeScreen from "../screens/HomeScreen";
 import AddPatientScreen from "../screens/AddPatientScreen";
+import PatientDetailScreen from "../screens/PatientDetailScreen";
+import ManageCaregiversScreen from "../screens/ManageCaregiversScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -13,7 +15,16 @@ const AppNavigator = () => {
         component={HomeScreen}
         options={{ headerShown: false }}
       />
-      {/* 2. Dodaj nowy ekran. Ustawiamy tytuł, który pokaże się na górze. */}
+      <Stack.Screen
+        name="PatientDetail"
+        component={PatientDetailScreen}
+        options={{ title: "Profil Podopiecznego" }}
+      />
+      <Stack.Screen
+        name="ManageCaregivers"
+        component={ManageCaregiversScreen}
+        options={{ title: "Zarządzaj Opiekunami" }}
+      />
       <Stack.Screen
         name="AddPatient"
         component={AddPatientScreen}

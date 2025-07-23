@@ -97,7 +97,12 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
             data={patients}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.patientCard}>
+              <TouchableOpacity
+                style={styles.patientCard}
+                onPress={() =>
+                  navigation.navigate("PatientDetail", { patientId: item.id })
+                }
+              >
                 <Text style={styles.patientName}>{item.name}</Text>
                 <Text style={styles.patientDescription}>
                   {item.description}
