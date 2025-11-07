@@ -103,6 +103,16 @@ const PatientDetailScreen = ({
     <View style={styles.container}>
       {/* Informacje o podopiecznym i przyciski */}
       <View style={styles.header}>
+        {/* NOWY PRZYCISK EDYCJI */}
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={() =>
+            navigation.navigate("EditPatient", { patientId: patient.id })
+          }
+        >
+          <Text style={styles.editButtonText}>Edytuj</Text>
+        </TouchableOpacity>
+
         <Text style={styles.name}>{patient.name}</Text>
         <Text style={styles.description}>{patient.description}</Text>
         <View style={styles.buttonRow}>
@@ -124,7 +134,7 @@ const PatientDetailScreen = ({
         </View>
       </View>
 
-      {/* NOWA SEKCJA: Historia wizyt */}
+      {/* Historia wizyt (bez zmian) */}
       <Text style={styles.historyTitle}>Historia Wizyt</Text>
       <FlatList
         data={shifts}
@@ -132,7 +142,6 @@ const PatientDetailScreen = ({
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.shiftCard}
-            // DODAJ TĘ WŁAŚCIWOŚĆ onPress:
             onPress={() =>
               navigation.navigate("ReportDetail", { shiftId: item.id })
             }
@@ -141,12 +150,10 @@ const PatientDetailScreen = ({
               {item.start.toDate().toLocaleDateString("pl-PL")}
             </Text>
             <Text style={styles.shiftTime}>
-              {item.start
-                .toDate()
-                .toLocaleTimeString("pl-PL", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
+              {item.start.toDate().toLocaleTimeString("pl-PL", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
             </Text>
           </TouchableOpacity>
         )}
@@ -167,13 +174,30 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
     borderBottomWidth: 1,
     borderBottomColor: "#ddd",
+    position: "relative", // Potrzebne dla przycisku edycji
   },
+  // NOWE STYLE PRZYCISKU
+  editButton: {
+    position: "absolute",
+    top: 15,
+    right: 15,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 5,
+    backgroundColor: "#f0f0f0",
+  },
+  editButtonText: {
+    color: "#007bff",
+    fontWeight: "600",
+  },
+  // Koniec nowych stylów
   name: {
     fontSize: 28,
     fontWeight: "bold",
     marginBottom: 10,
     textAlign: "center",
-  },
+    marginTop: 20,
+  }, // Dodany margines na górze
   description: {
     fontSize: 16,
     color: "gray",
@@ -192,7 +216,7 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   list: {
-    flex: 1, // Ważne, aby lista zajęła resztę ekranu
+    flex: 1,
   },
   shiftCard: {
     backgroundColor: "white",
