@@ -222,19 +222,15 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
                 <Text style={styles.shiftPatientName}>{item.patientName}</Text>
                 <Text style={styles.shiftTime}>
                   {item.start.toDate().toLocaleDateString("pl-PL")} |{" "}
-                  {item.start
-                    .toDate()
-                    .toLocaleTimeString("pl-PL", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}{" "}
+                  {item.start.toDate().toLocaleTimeString("pl-PL", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}{" "}
                   -{" "}
-                  {item.end
-                    .toDate()
-                    .toLocaleTimeString("pl-PL", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                  {item.end.toDate().toLocaleTimeString("pl-PL", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </Text>
               </TouchableOpacity>
             )}

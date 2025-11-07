@@ -65,7 +65,10 @@ const PatientDetailScreen = ({
         <Button
           title="Zaplanuj Wizytę"
           onPress={() =>
-            navigation.navigate("ScheduleVisit", { patientId: patient.id })
+            navigation.navigate("ScheduleVisit", {
+              patientId: patient.id,
+              patientName: patient.name,
+            })
           }
         />
         <Button
