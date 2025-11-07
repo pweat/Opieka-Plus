@@ -10,6 +10,7 @@ import {
   TextInput,
 } from "react-native";
 import { db } from "../../firebaseConfig";
+import { theme } from "../../theme"; // Importujemy motyw
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 
 // Typy (bez zmian)
@@ -34,6 +35,7 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
 
   const shiftDocRef = doc(db, "shifts", shiftId);
 
+  // Funkcja pobierania danych (bez zmian)
   useEffect(() => {
     const fetchShiftDetails = async () => {
       setLoading(true);
@@ -61,13 +63,12 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
     fetchShiftDetails();
   }, [shiftId]);
 
-  // Funkcja handleToggleTask (bez zmian)
+  // Funkcja odhaczania zadań (bez zmian)
   const handleToggleTask = async (taskIndex: number) => {
     if (!shift) return;
     const newTasks = [...shift.tasks];
     newTasks[taskIndex].isDone = !newTasks[taskIndex].isDone;
     setShift({ ...shift, tasks: newTasks });
-
     try {
       await updateDoc(shiftDocRef, { tasks: newTasks });
     } catch (error) {
@@ -75,7 +76,7 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
     }
   };
 
-  // Funkcja handleUpdateReport (bez zmian)
+  // Funkcja aktualizacji raportu (bez zmian)
   const handleUpdateReport = async (field: keyof ShiftDetails, value: any) => {
     if (!shift) return;
     setShift((prevShift) => ({ ...prevShift!, [field]: value }));
@@ -87,7 +88,11 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
   };
 
   if (loading) {
-    return <ActivityIndicator size="large" style={styles.loadingContainer} />;
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
   }
 
   if (!shift) {
@@ -99,22 +104,19 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
   }
 
   return (
-    // ScrollView jest teraz JEDYNYM elementem przewijanym
     <ScrollView style={styles.container}>
       <Text style={styles.patientName}>{shift.patientName}</Text>
 
-      {/* SEKCJA ZADAŃ - POPRAWKA BŁĘDU 1 */}
-      {/* Zamiast FlatList, używamy prostego mapowania. 
-          To rozwiązuje błąd zagnieżdżonych list. */}
+      {/* SEKCJA ZADAŃ */}
       <Text style={styles.title}>Zadania na dziś:</Text>
       {shift.tasks.length > 0 ? (
         shift.tasks.map((item, index) => (
           <TouchableOpacity
-            key={`${item.description}-${index}`} // Klucz musi być unikalny
-            style={styles.taskCard}
+            key={`${item.description}-${index}`}
+            style={styles.taskCard} // Używamy stylu karty
             onPress={() => handleToggleTask(index)}
           >
-            <View style={styles.checkbox}>
+            <View style={[styles.checkbox, item.isDone && styles.checkboxDone]}>
               {item.isDone && <Text style={styles.checkmark}>✔</Text>}
             </View>
             <Text
@@ -128,7 +130,7 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
         <Text style={styles.emptyText}>Brak zadań na tę wizytę.</Text>
       )}
 
-      {/* SEKCJA NASTRÓJ (bez zmian) */}
+      {/* SEKCJA NASTRÓJ */}
       <Text style={styles.title}>Nastrój podopiecznego:</Text>
       <View style={styles.optionsContainer}>
         <TouchableOpacity
@@ -160,7 +162,7 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
         </TouchableOpacity>
       </View>
 
-      {/* SEKCJA ENERGIA (bez zmian) */}
+      {/* SEKCJA ENERGIA */}
       <Text style={styles.title}>Poziom energii:</Text>
       <View style={styles.optionsContainer}>
         <TouchableOpacity
@@ -179,7 +181,6 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
             Mało
           </Text>
         </TouchableOpacity>
-        {/* ... pozostałe przyciski energii ... */}
         <TouchableOpacity
           style={[
             styles.optionButton,
@@ -214,128 +215,141 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
         </TouchableOpacity>
       </View>
 
-      {/* SEKCJA NOTATKI - POPRAWKA BŁĘDU 2 */}
+      {/* SEKCJA NOTATKI */}
       <Text style={styles.title}>Dodatkowe notatki:</Text>
       <TextInput
         style={styles.notesInput}
         placeholder="Wpisz swoje obserwacje..."
+        placeholderTextColor={theme.colors.textSecondary}
         multiline
         value={notes}
         onChangeText={setNotes}
-        // Używamy 'onBlur' zamiast 'onEndEditing'
         onBlur={() => handleUpdateReport("notes", notes)}
       />
     </ScrollView>
   );
 };
 
-// Style (dodany loadingContainer)
+// Nowy, kompletny arkusz stylów z motywem
 const styles = StyleSheet.create({
-  loadingContainer: {
+  container: {
     flex: 1,
+    padding: theme.spacing.large,
+    backgroundColor: theme.colors.background, // Tło z motywu
+  },
+  loadingContainer: {
     justifyContent: "center",
     alignItems: "center",
   },
-  container: {
-    flex: 1,
-    padding: 20,
-  },
   patientName: {
-    fontSize: 28,
+    fontSize: theme.fonts.title,
     fontWeight: "bold",
     textAlign: "center",
-    marginBottom: 20,
+    marginBottom: theme.spacing.large,
+    color: theme.colors.text,
   },
   title: {
-    fontSize: 20,
+    fontSize: theme.fonts.subtitle,
     fontWeight: "bold",
-    marginBottom: 10,
-    marginTop: 20,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.medium,
+    marginTop: theme.spacing.medium,
   },
   taskCard: {
-    backgroundColor: "white",
-    padding: 15,
-    borderRadius: 8,
-    marginBottom: 10,
+    backgroundColor: theme.colors.card, // Białe tło
+    padding: theme.spacing.medium,
+    borderRadius: 10,
+    marginBottom: theme.spacing.small,
     flexDirection: "row",
     alignItems: "center",
     elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
   checkbox: {
     width: 24,
     height: 24,
     borderRadius: 4,
     borderWidth: 2,
-    borderColor: "#007bff",
-    marginRight: 15,
+    borderColor: theme.colors.primary, // Brązowa ramka
+    marginRight: theme.spacing.medium,
     alignItems: "center",
     justifyContent: "center",
   },
+  checkboxDone: {
+    backgroundColor: theme.colors.primary, // Wypełnienie brązowe
+  },
   checkmark: {
     fontSize: 14,
-    color: "#007bff",
+    color: theme.colors.primaryText, // Biały ptaszek
   },
   taskDescription: {
-    fontSize: 16,
+    fontSize: theme.fonts.body,
+    color: theme.colors.text,
     flex: 1,
   },
   taskDone: {
     textDecorationLine: "line-through",
-    color: "gray",
+    color: theme.colors.textSecondary,
   },
   emptyText: {
-    color: "gray",
+    color: theme.colors.textSecondary,
     textAlign: "center",
-    marginTop: 10,
+    marginTop: theme.spacing.small,
     fontStyle: "italic",
   },
   optionsContainer: {
     flexDirection: "row",
     justifyContent: "space-around",
-    marginBottom: 20,
+    marginBottom: theme.spacing.medium,
   },
   moodButton: {
-    padding: 10,
+    padding: theme.spacing.small,
     borderRadius: 50,
     borderWidth: 2,
     borderColor: "transparent",
+    backgroundColor: theme.colors.card,
   },
   moodEmoji: {
     fontSize: 40,
   },
   moodSelected: {
-    backgroundColor: "#e0e0e0",
-    borderColor: "#c0c0c0",
+    backgroundColor: "#e0e0e0", // Lepsze podświetlenie
+    borderColor: theme.colors.primary, // Brązowa ramka
   },
   optionButton: {
     flex: 1,
-    paddingVertical: 15,
-    marginHorizontal: 5,
-    borderRadius: 8,
+    paddingVertical: theme.spacing.medium,
+    marginHorizontal: theme.spacing.small / 2,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#007bff",
+    borderColor: theme.colors.primary, // Brązowa ramka
+    backgroundColor: theme.colors.card, // Białe tło
     alignItems: "center",
   },
   optionSelected: {
-    backgroundColor: "#007bff",
+    backgroundColor: theme.colors.primary, // Brązowe tło
   },
   optionText: {
-    fontSize: 16,
-    color: "#007bff",
+    fontSize: theme.fonts.body,
+    color: theme.colors.primary, // Brązowy tekst
   },
   optionSelectedText: {
-    color: "white",
+    color: theme.colors.primaryText, // Biały tekst
+    fontWeight: "bold",
   },
   notesInput: {
-    backgroundColor: "white",
-    borderRadius: 8,
+    backgroundColor: theme.colors.card,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: "#ddd",
-    padding: 10,
-    fontSize: 16,
+    padding: theme.spacing.medium,
+    fontSize: theme.fonts.body,
     minHeight: 120,
     textAlignVertical: "top",
     marginBottom: 50,
+    color: theme.colors.text,
   },
 });
 

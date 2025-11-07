@@ -1,11 +1,19 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Button, StyleSheet, Alert } from "react-native";
-// Dodajemy importy z Firestore
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  Alert,
+  TouchableOpacity,
+  SafeAreaView,
+} from "react-native";
+// Importujemy bazę danych, motyw i funkcje autoryzacji
 import { auth, db } from "../../firebaseConfig";
+import { theme } from "../../theme"; // Poprawna ścieżka to ../theme
 import { createUserWithEmailAndPassword } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore"; // Import funkcji do zapisu w bazie
+import { doc, setDoc } from "firebase/firestore";
 
-// Modyfikujemy definicję, aby przyjmowała "route" - tam będzie nasza rola
 const RegisterScreen = ({
   route,
   navigation,
@@ -16,7 +24,6 @@ const RegisterScreen = ({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  // Odbieramy wybraną rolę przekazaną z poprzedniego ekranu
   const { selectedRole } = route.params;
 
   const handleRegister = async () => {
@@ -27,9 +34,8 @@ const RegisterScreen = ({
       );
       return;
     }
-
     try {
-      // Krok 1: Utwórz użytkownika w Firebase Authentication
+      // Krok 1: Utwórz użytkownika w Auth
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         email,
@@ -37,26 +43,21 @@ const RegisterScreen = ({
       );
       const user = userCredential.user;
 
-      // Krok 2: Zapisz dodatkowe informacje o użytkowniku w Firestore
-      // Tworzymy dokument w kolekcji "users" o ID takim samym jak UID użytkownika z Auth
+      // Krok 2: Zapisz rolę w Firestore
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
         email: user.email,
-        role: selectedRole, // Zapisujemy wybraną rolę!
-        createdAt: new Date(), // Zapisujemy datę utworzenia konta
+        role: selectedRole,
+        createdAt: new Date(),
       });
 
+      // Nie musimy już nawigować, RootNavigator sam wykryje zalogowanie
       Alert.alert("Sukces!", "Konto zostało pomyślnie utworzone.");
-      //navigation.navigate("Login");
     } catch (error: any) {
-      // ... obsługa błędów pozostaje bez zmian
       if (error.code === "auth/email-already-in-use") {
         Alert.alert("Błąd", "Ten adres email jest już zajęty.");
       } else if (error.code === "auth/weak-password") {
-        Alert.alert(
-          "Błąd",
-          "Hasło jest zbyt słabe. Powinno mieć co najmniej 6 znaków."
-        );
+        Alert.alert("Błąd", "Hasło jest zbyt słabe (min. 6 znaków).");
       } else {
         Alert.alert("Błąd rejestracji", error.message);
       }
@@ -64,19 +65,23 @@ const RegisterScreen = ({
   };
 
   return (
-    // ... cała reszta komponentu (TextInputy, Button) pozostaje bez zmian
-    <View style={styles.container}>
-      <Text style={styles.title}>
-        Stwórz konto jako{" "}
-        {selectedRole === "opiekun_glowny" ? "Opiekun Główny" : "Opiekun"}
+    <SafeAreaView style={styles.container}>
+      <Text style={styles.title}>Stwórz konto</Text>
+      <Text style={styles.subtitle}>
+        Jako:{" "}
+        {selectedRole === "opiekun_glowny"
+          ? "Opiekun Główny"
+          : "Opiekun / Opiekunka"}
       </Text>
+
       <TextInput
         style={styles.input}
         placeholder="Adres e-mail"
         value={email}
         onChangeText={setEmail}
-        autoCapitalize="none"
         keyboardType="email-address"
+        autoCapitalize="none"
+        placeholderTextColor={theme.colors.textSecondary}
       />
       <TextInput
         style={styles.input}
@@ -84,6 +89,7 @@ const RegisterScreen = ({
         value={password}
         onChangeText={setPassword}
         secureTextEntry
+        placeholderTextColor={theme.colors.textSecondary}
       />
       <TextInput
         style={styles.input}
@@ -91,40 +97,64 @@ const RegisterScreen = ({
         value={confirmPassword}
         onChangeText={setConfirmPassword}
         secureTextEntry
+        placeholderTextColor={theme.colors.textSecondary}
       />
-      <View style={styles.buttonContainer}>
-        <Button title="Zarejestruj się" onPress={handleRegister} />
-      </View>
-    </View>
+
+      {/* Przycisk "Zarejestruj się" */}
+      <TouchableOpacity style={styles.buttonPrimary} onPress={handleRegister}>
+        <Text style={styles.buttonPrimaryText}>Zarejestruj się</Text>
+      </TouchableOpacity>
+    </SafeAreaView>
   );
 };
 
+// Style z pliku theme.ts
 const styles = StyleSheet.create({
-  // ... style bez zmian
   container: {
     flex: 1,
+    backgroundColor: theme.colors.background,
     justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
+    padding: theme.spacing.large,
   },
   title: {
-    fontSize: 24,
+    fontSize: theme.fonts.title,
     fontWeight: "bold",
-    marginBottom: 20,
+    color: theme.colors.text,
     textAlign: "center",
+    marginBottom: theme.spacing.small, // Mniejszy margines
+  },
+  subtitle: {
+    fontSize: theme.fonts.body,
+    color: theme.colors.textSecondary,
+    textAlign: "center",
+    marginBottom: theme.spacing.large,
   },
   input: {
-    width: "100%",
-    height: 50,
+    backgroundColor: theme.colors.card,
     borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    marginBottom: 15,
+    borderColor: "#ddd",
+    borderRadius: 10,
+    padding: theme.spacing.medium,
+    marginBottom: theme.spacing.medium,
+    fontSize: theme.fonts.body,
+    color: theme.colors.text,
   },
-  buttonContainer: {
-    width: "100%",
-    marginTop: 10,
+  buttonPrimary: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: theme.spacing.medium,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: theme.spacing.small, // Mały margines nad przyciskiem
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  buttonPrimaryText: {
+    color: theme.colors.primaryText,
+    fontSize: theme.fonts.body,
+    fontWeight: "bold",
   },
 });
 

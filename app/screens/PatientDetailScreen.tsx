@@ -8,6 +8,7 @@ import {
   FlatList,
   TouchableOpacity,
   Alert,
+  SafeAreaView,
 } from "react-native";
 import {
   doc,
@@ -19,13 +20,14 @@ import {
   orderBy,
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
+import { theme } from "../../theme"; // Importujemy motyw
 
 // Interfejs dla wizyty (Shift)
 interface Shift {
   id: string;
   patientName: string;
-  caregiverId: string; // Będziemy go potrzebować, by znaleźć e-mail
-  start: { toDate: () => Date }; // Używamy toDate() do konwersji Timestamp
+  caregiverId: string;
+  start: { toDate: () => Date };
   status: string;
 }
 
@@ -39,13 +41,13 @@ const PatientDetailScreen = ({
   const { patientId, patientName } = route.params;
   const [loading, setLoading] = useState(true);
   const [patient, setPatient] = useState<any>(null);
-  const [shifts, setShifts] = useState<Shift[]>([]); // Nowy stan dla historii wizyt
+  const [shifts, setShifts] = useState<Shift[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // 1. Pobierz dane podopiecznego (tak jak wcześniej)
+        // 1. Pobierz dane podopiecznego
         const patientDocRef = doc(db, "patients", patientId);
         const patientDoc = await getDoc(patientDocRef);
         if (patientDoc.exists()) {
@@ -56,13 +58,12 @@ const PatientDetailScreen = ({
           return;
         }
 
-        // 2. Pobierz historię wizyt dla tego podopiecznego
+        // 2. Pobierz historię wizyt
         const shiftsQuery = query(
           collection(db, "shifts"),
           where("patientId", "==", patientId),
-          orderBy("start", "desc") // Sortuj od najnowszej wizyty
+          orderBy("start", "desc")
         );
-
         const querySnapshot = await getDocs(shiftsQuery);
         const shiftsList = querySnapshot.docs.map(
           (doc) =>
@@ -71,7 +72,6 @@ const PatientDetailScreen = ({
               ...doc.data(),
             } as Shift)
         );
-
         setShifts(shiftsList);
       } catch (error) {
         console.error("Błąd pobierania danych: ", error);
@@ -80,15 +80,17 @@ const PatientDetailScreen = ({
       setLoading(false);
     };
 
-    fetchData();
     // Odświeżaj dane za każdym razem, gdy ekran wraca na pierwszy plan
-    // (np. po zaplanowaniu nowej wizyty)
     const unsubscribe = navigation.addListener("focus", fetchData);
-    return unsubscribe; // Sprzątanie po wyjściu z ekranu
-  }, [patientId, navigation]); // Zależności efektu
+    return unsubscribe;
+  }, [patientId, navigation]);
 
   if (loading) {
-    return <ActivityIndicator size="large" style={styles.loadingContainer} />;
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
   }
 
   if (!patient) {
@@ -100,10 +102,10 @@ const PatientDetailScreen = ({
   }
 
   return (
+    // Używamy tła z motywu dla całego ekranu
     <View style={styles.container}>
       {/* Informacje o podopiecznym i przyciski */}
       <View style={styles.header}>
-        {/* NOWY PRZYCISK EDYCJI */}
         <TouchableOpacity
           style={styles.editButton}
           onPress={() =>
@@ -112,48 +114,56 @@ const PatientDetailScreen = ({
         >
           <Text style={styles.editButtonText}>Edytuj</Text>
         </TouchableOpacity>
-
         <Text style={styles.name}>{patient.name}</Text>
         <Text style={styles.description}>{patient.description}</Text>
+
+        {/* NOWE, STYLIZOWANE PRZYCISKI */}
         <View style={styles.buttonRow}>
-          <Button
-            title="Zaplanuj Wizytę"
+          <TouchableOpacity
+            style={styles.buttonPrimary}
             onPress={() =>
               navigation.navigate("ScheduleVisit", {
                 patientId: patient.id,
                 patientName: patient.name,
               })
             }
-          />
-          <Button
-            title="Zarządzaj Opiekunami"
+          >
+            <Text style={styles.buttonPrimaryText}>Zaplanuj Wizytę</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.buttonSecondary}
             onPress={() =>
               navigation.navigate("ManageCaregivers", { patientId: patient.id })
             }
-          />
+          >
+            <Text style={styles.buttonSecondaryText}>Zarządzaj Opiekunami</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Historia wizyt (bez zmian) */}
+      {/* Historia wizyt */}
       <Text style={styles.historyTitle}>Historia Wizyt</Text>
       <FlatList
         data={shifts}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <TouchableOpacity
-            style={styles.shiftCard}
+            style={styles.shiftCard} // Używamy stylu karty
             onPress={() =>
               navigation.navigate("ReportDetail", { shiftId: item.id })
             }
           >
-            <Text style={styles.shiftDate}>
+            <Text style={styles.cardTitle}>
               {item.start.toDate().toLocaleDateString("pl-PL")}
             </Text>
-            <Text style={styles.shiftTime}>
-              {item.start.toDate().toLocaleTimeString("pl-PL", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
+            <Text style={styles.cardText}>
+              Godz:{" "}
+              {item.start
+                .toDate()
+                .toLocaleTimeString("pl-PL", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
             </Text>
           </TouchableOpacity>
         )}
@@ -167,81 +177,123 @@ const PatientDetailScreen = ({
 };
 
 const styles = StyleSheet.create({
-  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  container: { flex: 1 },
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.background, // Tło z motywu
+  },
+  loadingContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
   header: {
-    padding: 20,
-    backgroundColor: "white",
+    padding: theme.spacing.large,
+    backgroundColor: theme.colors.card, // Białe tło dla nagłówka
     borderBottomWidth: 1,
     borderBottomColor: "#ddd",
-    position: "relative", // Potrzebne dla przycisku edycji
+    position: "relative",
+    elevation: 3, // Cień
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
-  // NOWE STYLE PRZYCISKU
   editButton: {
     position: "absolute",
-    top: 15,
-    right: 15,
+    top: theme.spacing.medium,
+    right: theme.spacing.medium,
     paddingVertical: 5,
     paddingHorizontal: 10,
     borderRadius: 5,
-    backgroundColor: "#f0f0f0",
+    backgroundColor: theme.colors.background, // Beżowe tło
   },
   editButtonText: {
-    color: "#007bff",
+    color: theme.colors.primary, // Brązowy tekst
     fontWeight: "600",
   },
-  // Koniec nowych stylów
   name: {
-    fontSize: 28,
+    fontSize: theme.fonts.title,
     fontWeight: "bold",
-    marginBottom: 10,
+    marginBottom: theme.spacing.small,
     textAlign: "center",
-    marginTop: 20,
-  }, // Dodany margines na górze
+    marginTop: theme.spacing.medium,
+    color: theme.colors.text,
+  },
   description: {
-    fontSize: 16,
-    color: "gray",
-    marginBottom: 20,
+    fontSize: theme.fonts.body,
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.large,
     textAlign: "center",
   },
   buttonRow: {
     flexDirection: "row",
-    justifyContent: "space-around",
+    justifyContent: "space-between",
     width: "100%",
   },
-  historyTitle: {
-    fontSize: 22,
+  // STYL GŁÓWNEGO PRZYCISKU
+  buttonPrimary: {
+    flex: 1, // Aby dzieliły przestrzeń
+    backgroundColor: theme.colors.primary,
+    paddingVertical: theme.spacing.medium,
+    borderRadius: 10,
+    alignItems: "center",
+    marginHorizontal: theme.spacing.small,
+  },
+  buttonPrimaryText: {
+    color: theme.colors.primaryText,
+    fontSize: theme.fonts.body,
     fontWeight: "bold",
-    padding: 20,
-    paddingBottom: 10,
+  },
+  // STYL DRUGIEGO PRZYCISKU (Z KONTUREM)
+  buttonSecondary: {
+    flex: 1, // Aby dzieliły przestrzeń
+    backgroundColor: theme.colors.card, // Białe tło
+    borderWidth: 1,
+    borderColor: theme.colors.primary, // Brązowa ramka
+    paddingVertical: theme.spacing.medium,
+    borderRadius: 10,
+    alignItems: "center",
+    marginHorizontal: theme.spacing.small,
+  },
+  buttonSecondaryText: {
+    color: theme.colors.primary, // Brązowy tekst
+    fontSize: theme.fonts.body,
+    fontWeight: "bold",
+  },
+  historyTitle: {
+    fontSize: theme.fonts.subtitle,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    padding: theme.spacing.large,
+    paddingBottom: theme.spacing.small,
   },
   list: {
     flex: 1,
+    paddingHorizontal: theme.spacing.large, // Odstęp dla listy
   },
+  // Styl karty dla historii wizyt
   shiftCard: {
-    backgroundColor: "white",
-    padding: 15,
-    marginHorizontal: 20,
-    marginBottom: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#eee",
+    backgroundColor: theme.colors.card,
+    padding: theme.spacing.medium,
+    borderRadius: 10,
+    marginBottom: theme.spacing.medium,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#eee",
   },
-  shiftDate: {
-    fontSize: 16,
+  cardTitle: {
+    fontSize: theme.fonts.body,
     fontWeight: "bold",
+    color: theme.colors.text,
   },
-  shiftTime: {
-    fontSize: 16,
-    color: "#555",
+  cardText: {
+    fontSize: theme.fonts.body,
+    color: theme.colors.textSecondary,
   },
   emptyText: {
-    color: "gray",
+    color: theme.colors.textSecondary,
     textAlign: "center",
-    marginTop: 20,
     fontStyle: "italic",
   },
 });

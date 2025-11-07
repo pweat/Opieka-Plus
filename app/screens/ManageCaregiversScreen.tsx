@@ -7,6 +7,7 @@ import {
   Alert,
   FlatList,
   ActivityIndicator,
+  TouchableOpacity,
 } from "react-native";
 import {
   collection,
@@ -16,8 +17,9 @@ import {
   getDoc,
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
+import { theme } from "../../theme"; // Pamiętamy o poprawnej ścieżce
 
-// Interfejs dla danych opiekuna, które pobierzemy
+// Interfejs dla danych opiekuna
 interface CaregiverProfile {
   id: string;
   email: string;
@@ -28,36 +30,29 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
   const [loading, setLoading] = useState(true);
   const [caregivers, setCaregivers] = useState<CaregiverProfile[]>([]);
 
-  // useEffect do pobrania listy przypisanych opiekunów
+  // Pobieranie listy przypisanych opiekunów (bez zmian)
   useEffect(() => {
     const fetchAssignedCaregivers = async () => {
       setLoading(true);
       try {
-        // 1. Pobierz dokument podopiecznego
         const patientDocRef = doc(db, "patients", patientId);
         const patientDoc = await getDoc(patientDocRef);
 
         if (patientDoc.exists() && patientDoc.data().caregiverIds) {
-          // 2. Weź tablicę ID opiekunów
           const caregiverIds: string[] = patientDoc.data().caregiverIds;
-
-          // 3. Pobierz profil każdego opiekuna (na razie tylko e-mail)
           const caregiversData = await Promise.all(
             caregiverIds.map(async (id) => {
               const userDoc = await getDoc(doc(db, "users", id));
               if (userDoc.exists()) {
                 return { id: userDoc.id, email: userDoc.data().email };
               }
-              return null; // Zwróć null, jeśli nie znajdzie
+              return null;
             })
           );
-
-          // 4. Ustaw stan, filtrując puste wyniki
           setCaregivers(
             caregiversData.filter((c) => c !== null) as CaregiverProfile[]
           );
         } else {
-          // Jeśli nie ma tablicy 'caregiverIds', to nikt nie jest przypisany
           setCaregivers([]);
         }
       } catch (error) {
@@ -66,9 +61,8 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
       }
       setLoading(false);
     };
-
     fetchAssignedCaregivers();
-  }, [patientId]); // Uruchom ponownie, jeśli ID pacjenta się zmieni
+  }, [patientId]);
 
   // Funkcja generowania kodu (bez zmian)
   const generateInviteCode = async () => {
@@ -91,32 +85,41 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
     }
   };
 
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      <View style={styles.buttonContainer}>
-        <Button title="Zaproś nowego Opiekuna" onPress={generateInviteCode} />
-      </View>
+      {/* Przycisk "Zaproś" w nowym stylu */}
+      <TouchableOpacity
+        style={styles.buttonPrimary}
+        onPress={generateInviteCode}
+      >
+        <Text style={styles.buttonPrimaryText}>Zaproś nowego Opiekuna</Text>
+      </TouchableOpacity>
 
       <Text style={styles.title}>Przypisani Opiekunowie:</Text>
 
-      {loading ? (
-        <ActivityIndicator size="large" style={{ marginTop: 20 }} />
-      ) : (
-        <FlatList
-          data={caregivers}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.caregiverCard}>
-              <Text style={styles.caregiverEmail}>{item.email}</Text>
-              {/* W przyszłości możemy tu dodać przycisk "Usuń" */}
-            </View>
-          )}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>Brak przypisanych opiekunów.</Text>
-          }
-          style={{ width: "100%" }}
-        />
-      )}
+      {/* Lista przypisanych opiekunów */}
+      <FlatList
+        data={caregivers}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          // Używamy stylu 'karty'
+          <View style={styles.card}>
+            <Text style={styles.cardText}>{item.email}</Text>
+          </View>
+        )}
+        ListEmptyComponent={
+          <Text style={styles.emptyText}>Brak przypisanych opiekunów.</Text>
+        }
+        style={{ width: "100%" }}
+      />
     </View>
   );
 };
@@ -124,35 +127,50 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
+    padding: theme.spacing.large,
+    backgroundColor: theme.colors.background, // Tło z motywu
+  },
+  loadingContainer: {
+    justifyContent: "center",
     alignItems: "center",
   },
-  buttonContainer: {
-    width: "100%",
-    marginBottom: 20,
+  // Styl głównego przycisku
+  buttonPrimary: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: theme.spacing.medium,
+    borderRadius: 10,
+    alignItems: "center",
+    marginBottom: theme.spacing.large, // Odstęp od listy
+    elevation: 3,
+  },
+  buttonPrimaryText: {
+    color: theme.colors.primaryText,
+    fontSize: theme.fonts.body,
+    fontWeight: "bold",
   },
   title: {
-    fontSize: 22,
+    fontSize: theme.fonts.subtitle,
     fontWeight: "bold",
-    marginBottom: 10,
-    alignSelf: "flex-start",
+    marginBottom: theme.spacing.medium,
+    color: theme.colors.text,
   },
-  caregiverCard: {
-    backgroundColor: "white",
-    padding: 15,
-    borderRadius: 8,
+  // Styl dla karty opiekuna
+  card: {
+    backgroundColor: theme.colors.card,
+    padding: theme.spacing.medium,
+    borderRadius: 10,
+    marginBottom: theme.spacing.medium,
     borderWidth: 1,
-    borderColor: "#ddd",
-    marginBottom: 10,
+    borderColor: "#eee",
   },
-  caregiverEmail: {
-    fontSize: 16,
+  cardText: {
+    fontSize: theme.fonts.body,
+    color: theme.colors.text,
   },
   emptyText: {
-    color: "gray",
+    color: theme.colors.textSecondary,
     fontStyle: "italic",
     textAlign: "center",
-    marginTop: 20,
   },
 });
 

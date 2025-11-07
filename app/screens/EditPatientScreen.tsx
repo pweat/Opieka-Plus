@@ -7,9 +7,13 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  ScrollView,
+  TouchableOpacity,
+  Platform, // Dodajemy TouchableOpacity
 } from "react-native";
 import { db } from "../../firebaseConfig";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { theme } from "../../theme"; // Pamiętamy o poprawnej ścieżce
+import { doc, getDoc, updateDoc, deleteDoc } from "firebase/firestore";
 
 const EditPatientScreen = ({
   route,
@@ -25,7 +29,7 @@ const EditPatientScreen = ({
   const [description, setDescription] = useState("");
   const patientDocRef = doc(db, "patients", patientId);
 
-  // 1. Pobierz aktualne dane, aby wypełnić formularz
+  // Pobieranie danych (bez zmian)
   useEffect(() => {
     const fetchPatientData = async () => {
       setLoading(true);
@@ -47,83 +51,174 @@ const EditPatientScreen = ({
     fetchPatientData();
   }, [patientId]);
 
-  // 2. Funkcja do zapisania zmian
+  // Funkcja aktualizacji (bez zmian)
   const handleUpdateProfile = async () => {
     if (name.trim() === "") {
       Alert.alert("Błąd", "Imię nie może być puste.");
       return;
     }
-
     try {
       await updateDoc(patientDocRef, {
         name: name,
         description: description,
       });
-
       Alert.alert("Sukces", "Profil podopiecznego został zaktualizowany.");
-      navigation.goBack(); // Wróć do ekranu szczegółów
+      navigation.goBack();
     } catch (error) {
       console.error("Błąd podczas aktualizacji: ", error);
       Alert.alert("Błąd", "Wystąpił błąd podczas zapisu.");
     }
   };
 
+  // Funkcja usuwania (bez zmian)
+  const handleDeleteProfile = () => {
+    Alert.alert(
+      "Potwierdź usunięcie",
+      `Czy na pewno chcesz trwale usunąć profil ${name}? Tej akcji nie można cofnąć.`,
+      [
+        { text: "Anuluj", style: "cancel" },
+        {
+          text: "Usuń",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteDoc(patientDocRef);
+              Alert.alert("Sukces", "Profil podopiecznego został usunięty.");
+              navigation.navigate("Home");
+            } catch (error) {
+              console.error("Błąd podczas usuwania: ", error);
+              Alert.alert("Błąd", "Nie udało się usunąć profilu.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (loading) {
-    return <ActivityIndicator size="large" style={styles.loadingContainer} />;
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Edytuj profil</Text>
+    <ScrollView style={styles.container}>
+      {/* Usunęliśmy tytuł, bo jest w nagłówku nawigacji */}
+
       <Text style={styles.label}>Imię:</Text>
       <TextInput
         style={styles.input}
-        placeholder="Imię (np. Babcia Krysia)"
+        placeholder="Imię podopiecznego"
+        placeholderTextColor={theme.colors.textSecondary}
         value={name}
         onChangeText={setName}
       />
+
       <Text style={styles.label}>Opis:</Text>
       <TextInput
         style={[styles.input, styles.textArea]}
-        placeholder="Krótki opis (np. stan zdrowia, ważne informacje)"
+        placeholder="Krótki opis"
+        placeholderTextColor={theme.colors.textSecondary}
         value={description}
         onChangeText={setDescription}
         multiline={true}
       />
-      <View style={styles.buttonContainer}>
-        <Button title="Zapisz zmiany" onPress={handleUpdateProfile} />
+
+      {/* Przycisk "Zapisz zmiany" w nowym stylu */}
+      <TouchableOpacity
+        style={styles.buttonPrimary}
+        onPress={handleUpdateProfile}
+      >
+        <Text style={styles.buttonPrimaryText}>Zapisz zmiany</Text>
+      </TouchableOpacity>
+
+      {/* Sekcja usuwania w nowym stylu */}
+      <View style={styles.deleteZone}>
+        <TouchableOpacity
+          style={styles.buttonDelete}
+          onPress={handleDeleteProfile}
+        >
+          <Text style={styles.buttonDeleteText}>Usuń ten profil</Text>
+        </TouchableOpacity>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
-  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  container: { flex: 1, padding: 20 },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 20,
-    textAlign: "center",
+  container: {
+    flex: 1,
+    padding: theme.spacing.large,
+    backgroundColor: theme.colors.background, // Tło z motywu
   },
-  label: { fontSize: 16, fontWeight: "500", marginBottom: 5, marginLeft: 5 },
+  loadingContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  label: {
+    fontSize: theme.fonts.body,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: theme.spacing.small,
+  },
   input: {
-    width: "100%",
-    height: 50,
+    backgroundColor: theme.colors.card,
     borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    marginBottom: 15,
-    backgroundColor: "white",
+    borderColor: "#ddd",
+    borderRadius: 10,
+    padding: theme.spacing.medium,
+    marginBottom: theme.spacing.medium,
+    fontSize: theme.fonts.body,
+    color: theme.colors.text,
   },
   textArea: {
-    height: 100,
+    height: 120,
     textAlignVertical: "top",
-    paddingTop: 10,
+    paddingTop: theme.spacing.medium,
   },
-  buttonContainer: {
-    marginTop: 20,
+  // Styl głównego przycisku
+  buttonPrimary: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: theme.spacing.medium,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: theme.spacing.small,
+    elevation: 3,
+  },
+  buttonPrimaryText: {
+    color: theme.colors.primaryText,
+    fontSize: theme.fonts.body,
+    fontWeight: "bold",
+  },
+  // Style dla sekcji usuwania
+  deleteZone: {
+    marginTop: theme.spacing.large * 2,
+    borderTopWidth: 1,
+    borderTopColor: "#ddd",
+    paddingTop: theme.spacing.large,
+  },
+  deleteLabel: {
+    fontSize: theme.fonts.subtitle,
+    color: "red",
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: theme.spacing.medium,
+  },
+  // Styl dla przycisku usuwania
+  buttonDelete: {
+    backgroundColor: theme.colors.card, // Białe tło
+    paddingVertical: theme.spacing.medium,
+    borderRadius: 10,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "red", // Czerwona ramka
+  },
+  buttonDeleteText: {
+    color: "red", // Czerwony tekst
+    fontSize: theme.fonts.body,
+    fontWeight: "bold",
   },
 });
 

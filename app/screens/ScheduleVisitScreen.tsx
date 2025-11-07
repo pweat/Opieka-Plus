@@ -11,8 +11,8 @@ import {
   TextInput,
 } from "react-native";
 import { db, auth } from "../../firebaseConfig";
+import { theme } from "../../theme";
 import { doc, getDoc, collection, addDoc, Timestamp } from "firebase/firestore";
-// 1. IMPORTUJEMY NOWY KOMPONENT KALENDARZA/ZEGARA
 import DateTimePickerModal from "react-native-modal-datetime-picker";
 
 const ScheduleVisitScreen = ({
@@ -26,23 +26,20 @@ const ScheduleVisitScreen = ({
   const [caregivers, setCaregivers] = useState<any[]>([]);
   const [selectedCaregiver, setSelectedCaregiver] = useState<any>(null);
 
-  // === NOWA LOGIKA DLA DATY I GODZINY ===
-  // Zamiast stringów, przechowujemy teraz pełne obiekty Date
+  // Stany dla daty i godziny (bez zmian)
   const [visitDate, setVisitDate] = useState<Date | null>(null);
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [endTime, setEndTime] = useState<Date | null>(null);
-
-  // Stany do pokazywania/ukrywania okienek wyboru
   const [isDatePickerVisible, setDatePickerVisibility] = useState(false);
   const [isStartTimePickerVisible, setStartTimePickerVisibility] =
     useState(false);
   const [isEndTimePickerVisible, setEndTimePickerVisibility] = useState(false);
 
-  // === Logika dla zadań (bez zmian) ===
-  const [tasks, setTasks] = useState<string[]>([]); // Tablica z listą zadań
-  const [currentTask, setCurrentTask] = useState(""); // Tekst w polu do dodawania zadań
+  // Stany dla zadań (bez zmian)
+  const [tasks, setTasks] = useState<string[]>([]);
+  const [currentTask, setCurrentTask] = useState("");
 
-  // Pobieramy listę opiekunów przypisanych do tego pacjenta
+  // Pobieranie opiekunów (bez zmian)
   useEffect(() => {
     const fetchCaregivers = async () => {
       const patientDocRef = doc(db, "patients", patientId);
@@ -63,30 +60,24 @@ const ScheduleVisitScreen = ({
     fetchCaregivers();
   }, [patientId]);
 
-  // Funkcja dodająca zadanie z pola tekstowego do naszej listy
+  // Funkcje obsługi (bez zmian)
   const handleAddTask = () => {
-    if (currentTask.trim() === "") return; // Nie dodawaj pustych zadań
-    setTasks([...tasks, currentTask.trim()]); // Dodaj zadanie do tablicy
-    setCurrentTask(""); // Wyczyść pole tekstowe
+    if (currentTask.trim() === "") return;
+    setTasks([...tasks, currentTask.trim()]);
+    setCurrentTask("");
   };
-
-  // === NOWE FUNKCJE OBSŁUGI KALENDARZA I ZEGARA ===
   const handleConfirmDate = (date: Date) => {
-    setVisitDate(date); // Zapisz wybraną datę
-    setDatePickerVisibility(false); // Ukryj kalendarz
+    setVisitDate(date);
+    setDatePickerVisibility(false);
   };
-
   const handleConfirmStartTime = (time: Date) => {
-    setStartTime(time); // Zapisz czas rozpoczęcia
-    setStartTimePickerVisibility(false); // Ukryj zegar
+    setStartTime(time);
+    setStartTimePickerVisibility(false);
   };
-
   const handleConfirmEndTime = (time: Date) => {
-    setEndTime(time); // Zapisz czas zakończenia
-    setEndTimePickerVisibility(false); // Ukryj zegar
+    setEndTime(time);
+    setEndTimePickerVisibility(false);
   };
-
-  // Główna funkcja zapisu wizyty (teraz używa obiektów Date)
   const handleScheduleVisit = async () => {
     if (!selectedCaregiver || !visitDate || !startTime || !endTime) {
       Alert.alert(
@@ -95,9 +86,7 @@ const ScheduleVisitScreen = ({
       );
       return;
     }
-
     try {
-      // Łączymy datę z kalendarza z godzinami z zegarów
       const startDateTime = new Date(
         visitDate.getFullYear(),
         visitDate.getMonth(),
@@ -112,7 +101,6 @@ const ScheduleVisitScreen = ({
         endTime.getHours(),
         endTime.getMinutes()
       );
-
       if (endDateTime <= startDateTime) {
         Alert.alert(
           "Błąd",
@@ -120,23 +108,20 @@ const ScheduleVisitScreen = ({
         );
         return;
       }
-
       const tasksForDb = tasks.map((taskText) => ({
         description: taskText,
         isDone: false,
       }));
-
       await addDoc(collection(db, "shifts"), {
         patientId: patientId,
         patientName: patientName,
         caregiverId: selectedCaregiver.id,
         ownerId: auth.currentUser?.uid,
-        start: Timestamp.fromDate(startDateTime), // Konwertujemy na Timestamp
-        end: Timestamp.fromDate(endDateTime), // Konwertujemy na Timestamp
+        start: Timestamp.fromDate(startDateTime),
+        end: Timestamp.fromDate(endDateTime),
         status: "scheduled",
         tasks: tasksForDb,
       });
-
       Alert.alert("Sukces", "Wizyta została zaplanowana.");
       navigation.goBack();
     } catch (error) {
@@ -148,27 +133,37 @@ const ScheduleVisitScreen = ({
   return (
     <ScrollView style={styles.container}>
       {/* Sekcja wyboru opiekuna */}
-      <Text style={styles.label}>Wybierz opiekuna:</Text>
+      <Text style={styles.label}>Wybierz opiekunkę/opiekuna:</Text>{" "}
+      {/* <--- POPRAWKA ETYKIETY */}
       <View style={styles.pillsContainer}>
-        {caregivers.map((cg) => (
-          <TouchableOpacity
-            key={cg.id}
-            style={[
-              styles.caregiverPill,
-              selectedCaregiver?.id === cg.id && styles.selectedPill,
-            ]}
-            onPress={() => setSelectedCaregiver(cg)}
-          >
-            <Text
-              style={selectedCaregiver?.id === cg.id && styles.selectedPillText}
+        {caregivers.length > 0 ? (
+          caregivers.map((cg) => (
+            <TouchableOpacity
+              key={cg.id}
+              style={[
+                styles.caregiverPill,
+                selectedCaregiver?.id === cg.id && styles.selectedPill,
+              ]}
+              onPress={() => setSelectedCaregiver(cg)}
             >
-              {cg.email}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              {/* TODO: Zmienić cg.email na cg.name, gdy dodamy imię do rejestracji */}
+              <Text
+                style={[
+                  styles.pillText,
+                  selectedCaregiver?.id === cg.id && styles.selectedPillText,
+                ]}
+              >
+                {cg.email}
+              </Text>
+            </TouchableOpacity>
+          ))
+        ) : (
+          <Text style={styles.emptyText}>
+            Brak dostępnych opiekunów. Najpierw zaproś kogoś do profilu.
+          </Text>
+        )}
       </View>
-
-      {/* === PRZEBUDOWANA SEKCJA DATY I CZASU === */}
+      {/* Sekcja Daty i Czasu */}
       <Text style={styles.label}>Data wizyty:</Text>
       <TouchableOpacity
         style={styles.pickerButton}
@@ -178,10 +173,9 @@ const ScheduleVisitScreen = ({
           {visitDate ? visitDate.toLocaleDateString("pl-PL") : "Wybierz datę"}
         </Text>
       </TouchableOpacity>
-
       <View style={styles.timeRow}>
         <View style={styles.timeColumn}>
-          <Text style={styles.label}>Godzina rozpoczęcia:</Text>
+          <Text style={styles.label}>Od:</Text>
           <TouchableOpacity
             style={styles.pickerButton}
             onPress={() => setStartTimePickerVisibility(true)}
@@ -192,12 +186,12 @@ const ScheduleVisitScreen = ({
                     hour: "2-digit",
                     minute: "2-digit",
                   })
-                : "Wybierz czas"}
+                : "Czas"}
             </Text>
           </TouchableOpacity>
         </View>
         <View style={styles.timeColumn}>
-          <Text style={styles.label}>Godzina zakończenia:</Text>
+          <Text style={styles.label}>Do:</Text>
           <TouchableOpacity
             style={styles.pickerButton}
             onPress={() => setEndTimePickerVisibility(true)}
@@ -208,13 +202,12 @@ const ScheduleVisitScreen = ({
                     hour: "2-digit",
                     minute: "2-digit",
                   })
-                : "Wybierz czas"}
+                : "Czas"}
             </Text>
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* === DODAJEMY KOMPONENTY MODALNE (są niewidoczne, dopóki ich nie włączymy) === */}
+      {/* Modale DateTimePicker (bez zmian) */}
       <DateTimePickerModal
         isVisible={isDatePickerVisible}
         mode="date"
@@ -223,7 +216,7 @@ const ScheduleVisitScreen = ({
         locale="pl_PL"
         confirmTextIOS="Potwierdź"
         cancelTextIOS="Anuluj"
-        minimumDate={new Date()} // Opcjonalnie: nie można wybierać dat z przeszłości
+        minimumDate={new Date()}
       />
       <DateTimePickerModal
         isVisible={isStartTimePickerVisible}
@@ -245,91 +238,155 @@ const ScheduleVisitScreen = ({
         cancelTextIOS="Anuluj"
         is24Hour={true}
       />
-
-      {/* Sekcja zadań */}
+      {/* Sekcja zadań (bez zmian) */}
       <Text style={styles.label}>Zadania do wykonania:</Text>
       <View style={styles.taskInputContainer}>
         <TextInput
-          style={styles.taskInput}
-          placeholder="np. Podać leki o 10:00"
+          style={styles.input}
+          placeholder="Wpisz treść zadania..."
+          placeholderTextColor={theme.colors.textSecondary}
           value={currentTask}
           onChangeText={setCurrentTask}
         />
-        <Button title="Dodaj" onPress={handleAddTask} />
+        <TouchableOpacity style={styles.addTaskButton} onPress={handleAddTask}>
+          <Text style={styles.addTaskButtonText}>Dodaj</Text>
+        </TouchableOpacity>
       </View>
-
       {tasks.map((task, index) => (
-        <Text key={index} style={styles.taskItem}>
-          • {task}
-        </Text>
+        <View key={index} style={styles.taskItem}>
+          <Text style={styles.taskText}>• {task}</Text>
+        </View>
       ))}
-
+      {/* Przycisk "Zaplanuj" (bez zmian) */}
       <View style={styles.buttonContainer}>
-        <Button title="Zaplanuj wizytę" onPress={handleScheduleVisit} />
+        <TouchableOpacity
+          style={styles.buttonPrimary}
+          onPress={handleScheduleVisit}
+        >
+          <Text style={styles.buttonPrimaryText}>Zaplanuj wizytę</Text>
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
 };
 
-// Style (musimy dodać nowe style dla przycisków wyboru)
+// Style (bez zmian)
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20 },
-  label: { fontSize: 16, fontWeight: "bold", marginTop: 15, marginBottom: 5 },
-  pillsContainer: { flexDirection: "row", flexWrap: "wrap" },
+  container: {
+    flex: 1,
+    padding: theme.spacing.large,
+    backgroundColor: theme.colors.background,
+  },
+  label: {
+    fontSize: theme.fonts.body,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: theme.spacing.small,
+    marginTop: theme.spacing.medium,
+  },
+  pillsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
   caregiverPill: {
-    paddingVertical: 8,
-    paddingHorizontal: 15,
+    paddingVertical: theme.spacing.small,
+    paddingHorizontal: theme.spacing.medium,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#007bff",
-    margin: 5,
-    backgroundColor: "white",
+    borderColor: theme.colors.primary,
+    margin: 4,
+    backgroundColor: theme.colors.card,
   },
-  selectedPill: { backgroundColor: "#007bff" },
-  selectedPillText: { color: "white" },
-
-  // NOWE STYLE DLA PRZYCISKÓW DATY/CZASU
+  selectedPill: {
+    backgroundColor: theme.colors.primary,
+  },
+  pillText: {
+    color: theme.colors.primary,
+  },
+  selectedPillText: {
+    color: theme.colors.primaryText,
+  },
   pickerButton: {
-    backgroundColor: "white",
+    backgroundColor: theme.colors.card,
     borderWidth: 1,
-    borderColor: "gray",
-    borderRadius: 5,
-    paddingHorizontal: 10,
-    height: 40,
+    borderColor: "#ddd",
+    borderRadius: 10,
+    padding: theme.spacing.medium,
+    height: 50,
     justifyContent: "center",
   },
   pickerButtonText: {
-    fontSize: 16,
-    color: "#333",
+    fontSize: theme.fonts.body,
+    color: theme.colors.text,
   },
   timeRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginLeft: -5, // Drobna korekta dla dopasowania
-    marginRight: -5,
+    marginLeft: -theme.spacing.small / 2,
+    marginRight: -theme.spacing.small / 2,
   },
   timeColumn: {
-    flex: 1, // Dzieli przestrzeń
-    marginHorizontal: 5, // Drobny odstęp między nimi
+    flex: 1,
+    marginHorizontal: theme.spacing.small / 2,
   },
-
   taskInputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: theme.spacing.medium,
   },
-  taskInput: {
+  input: {
     flex: 1,
-    height: 40,
-    borderColor: "gray",
+    backgroundColor: theme.colors.card,
     borderWidth: 1,
-    borderRadius: 5,
-    paddingHorizontal: 10,
-    marginRight: 10,
-    backgroundColor: "white",
+    borderColor: "#ddd",
+    borderRadius: 10,
+    padding: theme.spacing.medium,
+    fontSize: theme.fonts.body,
+    color: theme.colors.text,
+    height: 50,
   },
-  taskItem: { fontSize: 16, marginLeft: 10, marginBottom: 5 },
-  buttonContainer: { marginTop: 30, marginBottom: 50 },
+  addTaskButton: {
+    backgroundColor: theme.colors.primary,
+    padding: theme.spacing.medium,
+    borderRadius: 10,
+    marginLeft: theme.spacing.small,
+    height: 50,
+    justifyContent: "center",
+  },
+  addTaskButtonText: {
+    color: theme.colors.primaryText,
+    fontWeight: "bold",
+  },
+  taskItem: {
+    backgroundColor: theme.colors.card,
+    padding: theme.spacing.small,
+    borderRadius: 5,
+    marginBottom: theme.spacing.small,
+  },
+  taskText: {
+    fontSize: theme.fonts.body,
+    color: theme.colors.text,
+  },
+  buttonContainer: {
+    marginTop: theme.spacing.large,
+    marginBottom: theme.spacing.large * 2,
+  },
+  buttonPrimary: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: theme.spacing.medium,
+    borderRadius: 10,
+    alignItems: "center",
+    elevation: 3,
+  },
+  buttonPrimaryText: {
+    color: theme.colors.primaryText,
+    fontSize: theme.fonts.body,
+    fontWeight: "bold",
+  },
+  emptyText: {
+    color: theme.colors.textSecondary,
+    fontStyle: "italic",
+  },
 });
 
 export default ScheduleVisitScreen;

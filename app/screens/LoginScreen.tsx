@@ -1,35 +1,31 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Button, StyleSheet, Alert } from "react-native";
-// Ponownie importujemy 'auth' oraz nową funkcję do logowania
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  Alert,
+  TouchableOpacity,
+  SafeAreaView,
+} from "react-native";
 import { auth } from "../../firebaseConfig";
 import { signInWithEmailAndPassword } from "firebase/auth";
+// Importujemy nasz motyw!
+import { theme } from "../../theme";
 
 const LoginScreen = ({ navigation }: { navigation: any }) => {
-  // Potrzebujemy "stanu" tylko dla e-maila i hasła
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  // Funkcja obsługująca logowanie
   const handleLogin = async () => {
-    // Prosta walidacja
     if (!email || !password) {
       Alert.alert("Błąd", "Proszę podać e-mail i hasło.");
       return;
     }
-
     try {
-      // Używamy funkcji do logowania, która jest bardzo podobna do tej od rejestracji
-      const userCredential = await signInWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
-      console.log("Zalogowano pomyślnie!", userCredential.user);
-      // Na razie po zalogowaniu nic więcej się nie dzieje.
-      // W następnym kroku zbudujemy logikę, która przeniesie nas do głównej części aplikacji.
+      await signInWithEmailAndPassword(auth, email, password);
+      // Alert o sukcesie został usunięty (zgodnie z Twoją prośbą)
     } catch (error: any) {
-      console.error(error);
-      // Obsługujemy typowe błędy logowania
       if (
         error.code === "auth/user-not-found" ||
         error.code === "auth/wrong-password"
@@ -42,8 +38,10 @@ const LoginScreen = ({ navigation }: { navigation: any }) => {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <Text style={styles.title}>Zaloguj się</Text>
+
+      {/* Nowe, stylizowane pole tekstowe */}
       <TextInput
         style={styles.input}
         placeholder="Adres e-mail"
@@ -51,52 +49,90 @@ const LoginScreen = ({ navigation }: { navigation: any }) => {
         onChangeText={setEmail}
         keyboardType="email-address"
         autoCapitalize="none"
+        placeholderTextColor={theme.colors.textSecondary}
       />
+
+      {/* Nowe, stylizowane pole tekstowe */}
       <TextInput
         style={styles.input}
         placeholder="Hasło"
         value={password}
         onChangeText={setPassword}
         secureTextEntry
+        placeholderTextColor={theme.colors.textSecondary}
       />
-      <View style={styles.buttonContainer}>
-        <Button title="Zaloguj się" onPress={handleLogin} />
-      </View>
-      <View style={styles.buttonContainer}>
-        <Button
-          title="Nie masz konta? Zarejestruj się"
-          onPress={() => navigation.navigate("RoleSelection")}
-          color="gray"
-        />
-      </View>
-    </View>
+
+      {/* Nasz nowy, główny przycisk */}
+      <TouchableOpacity style={styles.buttonPrimary} onPress={handleLogin}>
+        <Text style={styles.buttonPrimaryText}>Zaloguj się</Text>
+      </TouchableOpacity>
+
+      {/* Nasz nowy, dodatkowy przycisk */}
+      <TouchableOpacity
+        style={styles.buttonSecondary}
+        onPress={() => navigation.navigate("RoleSelection")}
+      >
+        <Text style={styles.buttonSecondaryText}>
+          Nie masz konta? Zarejestruj się
+        </Text>
+      </TouchableOpacity>
+    </SafeAreaView>
   );
 };
 
+// Nowe style z pliku theme.ts
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: theme.colors.background,
     justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
+    padding: theme.spacing.large,
   },
   title: {
-    fontSize: 24,
+    fontSize: theme.fonts.title,
     fontWeight: "bold",
-    marginBottom: 20,
+    color: theme.colors.text,
+    textAlign: "center",
+    marginBottom: theme.spacing.large,
   },
+  // Styl dla naszych pól tekstowych
   input: {
-    width: "100%",
-    height: 50,
+    backgroundColor: theme.colors.card, // Tło 'karty' (białe)
     borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    marginBottom: 15,
+    borderColor: "#ddd", // Delikatna ramka
+    borderRadius: 10,
+    padding: theme.spacing.medium,
+    marginBottom: theme.spacing.medium,
+    fontSize: theme.fonts.body,
+    color: theme.colors.text,
   },
-  buttonContainer: {
-    width: "100%",
-    marginTop: 10, // Tylko margines na górze
+  // Style przycisków (takie same jak na WelcomeScreen)
+  buttonPrimary: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: theme.spacing.medium,
+    borderRadius: 10,
+    alignItems: "center",
+    marginBottom: theme.spacing.medium,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  buttonPrimaryText: {
+    color: theme.colors.primaryText,
+    fontSize: theme.fonts.body,
+    fontWeight: "bold",
+  },
+  buttonSecondary: {
+    paddingVertical: theme.spacing.medium,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  buttonSecondaryText: {
+    color: theme.colors.primary,
+    fontSize: theme.fonts.body,
+    fontWeight: "bold",
   },
 });
 

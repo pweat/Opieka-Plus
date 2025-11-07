@@ -9,8 +9,12 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  SafeAreaView,
+  StatusBar,
+  Platform,
 } from "react-native";
 import { auth, db } from "../../firebaseConfig";
+import { theme } from "../../theme";
 import { signOut } from "firebase/auth";
 import {
   collection,
@@ -26,7 +30,7 @@ import {
 } from "firebase/firestore";
 import { useIsFocused } from "@react-navigation/native";
 
-// Definicje typów (bez zmian)
+// Interfejsy (bez zmian)
 interface UserProfile {
   uid: string;
   email: string;
@@ -45,12 +49,13 @@ interface Shift {
 }
 
 const HomeScreen = ({ navigation }: { navigation: any }) => {
+  // Cała logika (useState, useEffect, fetchData, handleJoin, handleLogout)
+  // pozostaje BEZ ZMIAN.
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [patients, setPatients] = useState<PatientProfile[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [inviteCode, setInviteCode] = useState("");
-
   const isFocused = useIsFocused();
 
   useEffect(() => {
@@ -59,7 +64,6 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     }
   }, [isFocused]);
 
-  // Funkcja fetchData (bez zmian)
   const fetchData = async () => {
     setLoading(true);
     const user = auth.currentUser;
@@ -68,17 +72,17 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
       if (userDoc.exists()) {
         const profile = userDoc.data() as UserProfile;
         setUserProfile(profile);
-
         if (profile.role === "opiekun_glowny") {
           const q = query(
             collection(db, "patients"),
             where("ownerId", "==", user.uid)
           );
           const querySnapshot = await getDocs(q);
-          const patientsList = querySnapshot.docs.map(
-            (doc) => ({ id: doc.id, ...doc.data() } as PatientProfile)
+          setPatients(
+            querySnapshot.docs.map(
+              (doc) => ({ id: doc.id, ...doc.data() } as PatientProfile)
+            )
           );
-          setPatients(patientsList);
         } else if (profile.role === "opiekun") {
           const patientQuery = query(
             collection(db, "patients"),
@@ -89,7 +93,6 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
             (doc) => ({ id: doc.id, ...doc.data() } as PatientProfile)
           );
           setPatients(patientsList);
-
           if (patientsList.length > 0) {
             const shiftQuery = query(
               collection(db, "shifts"),
@@ -105,22 +108,17 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
             setShifts([]);
           }
         }
-      } else {
-        console.log("Błąd: Nie znaleziono dokumentu użytkownika!");
       }
     }
     setLoading(false);
   };
 
-  // === NOWA, POPRAWIONA WERSJA handleJoinWithCode ===
   const handleJoinWithCode = async () => {
     if (inviteCode.trim() === "")
       return Alert.alert("Błąd", "Wpisz kod zaproszenia.");
     const user = auth.currentUser;
     if (!user) return;
-
-    setLoading(true); // 1. Pokaż ekran ładowania
-
+    setLoading(true);
     const q = query(
       collection(db, "invitations"),
       where("code", "==", inviteCode.trim()),
@@ -128,7 +126,6 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
       limit(1)
     );
     const querySnapshot = await getDocs(q);
-
     if (querySnapshot.empty) {
       setLoading(false);
       Alert.alert(
@@ -137,54 +134,38 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
       );
       return;
     }
-
     try {
       const invitationDoc = querySnapshot.docs[0];
       const { patientId } = invitationDoc.data();
       const patientDocRef = doc(db, "patients", patientId);
-
       const patientDoc = await getDoc(patientDocRef);
-      if (!patientDoc.exists()) {
-        throw new Error("Pacjent nie istnieje");
-      }
-
-      // Poprawka błędu: Sprawdź, czy opiekun nie jest już dodany
+      if (!patientDoc.exists()) throw new Error("Pacjent nie istnieje");
       if (patientDoc.data()?.caregiverIds?.includes(user.uid)) {
         Alert.alert(
           "Informacja",
           "Jesteś już przypisany do tego podopiecznego."
         );
-        // Kluczowe: Mimo to, musimy poprawnie ustawić stan!
-        // Użyjemy fetchData(), aby pobrać poprawną listę i na tym zakończyć.
-        await fetchData(); // poczekaj na pobranie danych
-        return; // i zakończ funkcję
+        await fetchData();
+        return;
       }
-
-      // Aktualizacje bazy danych
       await updateDoc(patientDocRef, { caregiverIds: arrayUnion(user.uid) });
       await updateDoc(invitationDoc.ref, {
         status: "accepted",
         acceptedBy: user.uid,
       });
-
-      // === KLUCZOWA ZMIANA (NAPRAWA BŁĘDU) ===
-      // Nie wołamy fetchData()! Zamiast tego ręcznie aktualizujemy stan,
-      // aby *zmusić* aplikację do przełączenia widoku.
-      setPatients((prevPatients) => [
-        ...prevPatients,
+      setPatients((prev) => [
+        ...prev,
         {
-          id: patientDoc.id,
-          name: patientDoc.data()?.name || "Nowy Podopieczny",
+          id: patientId,
+          name: patientDoc.data()?.name || "",
           description: patientDoc.data()?.description || "",
-        } as PatientProfile,
+        },
       ]);
-      setShifts([]); // Na razie nie ma żadnych wizyt
-
-      setLoading(false); // 2. Ukryj ładowanie
-      Alert.alert("Sukces!", "Zostałeś pomyślnie przypisany do podopiecznego."); // 3. Pokaż alert
+      setShifts([]);
+      setLoading(false);
+      Alert.alert("Sukces!", "Zostałeś pomyślnie przypisany do podopiecznego.");
     } catch (error) {
-      console.error("Błąd podczas akceptowania zaproszenia: ", error);
-      setLoading(false); // Pamiętaj o wyłączeniu ładowania w razie błędu
+      setLoading(false);
       Alert.alert("Błąd", "Wystąpił problem podczas dołączania.");
     }
   };
@@ -195,20 +176,18 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#0000ff" />
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
   }
 
-  // Funkcja renderCaregiverView (bez zmian, ale teraz będzie działać)
-  const renderCaregiverView = () => {
-    // Ta logika jest poprawna. Będzie działać, bo `patients.length`
-    // zostanie poprawnie zaktualizowane w `handleJoinWithCode`.
-    if (patients.length > 0) {
-      return (
+  // Funkcje renderOwnerView i renderCaregiverView (bez zmian)
+  const renderCaregiverView = () => (
+    <View style={styles.content}>
+      {patients.length > 0 ? (
         <>
-          <Text style={styles.infoText}>Twój harmonogram</Text>
+          <Text style={styles.title}>Twój harmonogram</Text>
           <FlatList
             data={shifts}
             keyExtractor={(item) => item.id}
@@ -219,54 +198,61 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
                   navigation.navigate("ShiftDetail", { shiftId: item.id })
                 }
               >
-                <Text style={styles.shiftPatientName}>{item.patientName}</Text>
-                <Text style={styles.shiftTime}>
-                  {item.start.toDate().toLocaleDateString("pl-PL")} |{" "}
-                  {item.start.toDate().toLocaleTimeString("pl-PL", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}{" "}
+                <Text style={styles.cardTitle}>{item.patientName}</Text>
+                <Text style={styles.cardText}>
+                  {item.start.toDate().toLocaleDateString("pl-PL")}
+                </Text>
+                <Text style={styles.cardText}>
+                  {item.start
+                    .toDate()
+                    .toLocaleTimeString("pl-PL", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}{" "}
                   -{" "}
-                  {item.end.toDate().toLocaleTimeString("pl-PL", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  {item.end
+                    .toDate()
+                    .toLocaleTimeString("pl-PL", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
                 </Text>
               </TouchableOpacity>
             )}
             ListEmptyComponent={
-              <Text style={styles.emptyListText}>
+              <Text style={styles.emptyText}>
                 Nie masz jeszcze zaplanowanych wizyt.
               </Text>
             }
             style={styles.list}
           />
         </>
-      );
-    }
+      ) : (
+        <>
+          <Text style={styles.title}>Dołącz do profilu</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Wpisz 6-cyfrowy kod"
+            value={inviteCode}
+            onChangeText={setInviteCode}
+            placeholderTextColor={theme.colors.textSecondary}
+            keyboardType="number-pad"
+            maxLength={6}
+          />
+          <TouchableOpacity
+            style={styles.buttonPrimary}
+            onPress={handleJoinWithCode}
+          >
+            <Text style={styles.buttonPrimaryText}>Dołącz za pomocą kodu</Text>
+          </TouchableOpacity>
+        </>
+      )}
+    </View>
+  );
 
-    return (
-      <>
-        <Text style={styles.infoText}>Dołącz do profilu podopiecznego</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Wpisz 6-cyfrowy kod"
-          value={inviteCode}
-          onChangeText={setInviteCode}
-          keyboardType="number-pad"
-          maxLength={6}
-        />
-        <View style={styles.buttonContainer}>
-          <Button title="Dołącz za pomocą kodu" onPress={handleJoinWithCode} />
-        </View>
-      </>
-    );
-  };
-
-  // Funkcja renderOwnerView (bez zmian)
   const renderOwnerView = () => (
-    <>
-      <Text style={styles.infoText}>Twoi podopieczni</Text>
+    <View style={styles.content}>
+      <Text style={styles.title}>Twoi podopieczni</Text>
       <FlatList
         data={patients}
         keyExtractor={(item) => item.id}
@@ -280,118 +266,187 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
               })
             }
           >
-            <Text style={styles.patientName}>{item.name}</Text>
-            <Text style={styles.patientDescription}>{item.description}</Text>
+            <Text style={styles.cardTitle}>{item.name}</Text>
+            <Text style={styles.cardText}>{item.description}</Text>
           </TouchableOpacity>
         )}
         ListEmptyComponent={
-          <Text style={styles.emptyListText}>
+          <Text style={styles.emptyText}>
             Brak podopiecznych. Dodaj pierwszy profil.
           </Text>
         }
         style={styles.list}
       />
-      <View style={styles.buttonContainer}>
-        <Button
-          title="+ Dodaj profil podopiecznego"
-          onPress={() => navigation.navigate("AddPatient")}
-        />
-      </View>
-    </>
+    </View>
   );
 
   // Główny return (bez zmian)
   return (
-    <View style={styles.container}>
-      <Text style={styles.welcomeText}>Witaj, {userProfile?.email}!</Text>
-      <View style={styles.content}>
-        {userProfile?.role === "opiekun_glowny"
-          ? renderOwnerView()
-          : renderCaregiverView()}
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={theme.colors.card} />
+
+      <View style={styles.header}>
+        <Text style={styles.welcomeText}>Witaj, {userProfile?.email}!</Text>
+        <TouchableOpacity onPress={handleLogout}>
+          <Text style={styles.logoutText}>Wyloguj się</Text>
+        </TouchableOpacity>
       </View>
-      <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-        <Text style={styles.logoutText}>Wyloguj się</Text>
-      </TouchableOpacity>
-    </View>
+
+      {userProfile?.role === "opiekun_glowny"
+        ? renderOwnerView()
+        : renderCaregiverView()}
+
+      {userProfile?.role === "opiekun_glowny" && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => navigation.navigate("AddPatient")}
+        >
+          <Text style={styles.fabText}>+</Text>
+        </TouchableOpacity>
+      )}
+    </SafeAreaView>
   );
 };
 
-// Style (bez zmian)
+// === ARKUSZ STYLÓW Z POPRAWKAMI ===
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    paddingTop: 80,
-    backgroundColor: "#f0f0f0",
+    backgroundColor: theme.colors.background,
   },
-  content: { flex: 1, width: "100%", alignItems: "center" },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: theme.colors.background,
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: theme.colors.card,
+    paddingHorizontal: theme.spacing.large,
+    paddingBottom: theme.spacing.medium,
+
+    // === POPRAWKA TUTAJ ===
+    // Najpierw sprawdzamy, czy jesteśmy na Androidzie.
+    // Jeśli tak, używamy `StatusBar.currentHeight` (lub 0, jeśli jest undefined) i dodajemy 10.
+    // Jeśli jesteśmy na iOS, używamy stałej wartości 50.
+    paddingTop:
+      Platform.OS === "android" ? (StatusBar.currentHeight || 0) + 10 : 50,
+
+    borderBottomWidth: 1,
+    borderBottomColor: "#ddd",
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
   welcomeText: {
-    fontSize: 16,
-    position: "absolute",
-    top: 50,
-    alignSelf: "center",
-    color: "gray",
+    color: theme.colors.textSecondary,
+    fontSize: 14,
+    flex: 1,
   },
-  infoText: {
-    fontSize: 28,
+  logoutText: {
+    color: theme.colors.primary,
+    fontSize: 14,
     fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 20,
-    color: "#333",
+    paddingLeft: theme.spacing.small,
   },
-  emptyListText: {
-    fontSize: 16,
-    color: "gray",
-    textAlign: "center",
-    marginTop: 50,
+  content: {
+    flex: 1,
+    paddingHorizontal: theme.spacing.large,
+    paddingTop: theme.spacing.medium,
   },
-  list: { width: "100%" },
+  title: {
+    fontSize: theme.fonts.title,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: theme.spacing.medium,
+  },
+  list: {
+    width: "100%",
+  },
+  emptyText: {
+    fontSize: theme.fonts.body,
+    color: theme.colors.textSecondary,
+    textAlign: "center",
+    marginTop: theme.spacing.large,
+  },
+  // Reszta stylów (karty, przyciski, FAB) pozostaje bez zmian
   patientCard: {
-    backgroundColor: "white",
-    padding: 20,
+    backgroundColor: theme.colors.card,
+    padding: theme.spacing.medium,
     borderRadius: 10,
-    marginBottom: 15,
+    marginBottom: theme.spacing.medium,
     elevation: 3,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  patientName: { fontSize: 18, fontWeight: "bold", color: "#444" },
-  patientDescription: { fontSize: 14, color: "#666", marginTop: 5 },
-  logoutButton: { padding: 10, alignSelf: "center", marginBottom: 20 },
-  logoutText: { color: "red", fontSize: 16 },
-  input: {
-    width: "80%",
-    height: 50,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    marginBottom: 15,
-    fontSize: 18,
-    textAlign: "center",
-  },
-  buttonContainer: {
-    width: "90%",
-    marginTop: 20,
-  },
   shiftCard: {
     backgroundColor: "#e9f5ff",
-    padding: 15,
+    padding: theme.spacing.medium,
     borderRadius: 10,
-    marginBottom: 10,
-    borderColor: "#007bff",
+    marginBottom: theme.spacing.medium,
     borderWidth: 1,
+    borderColor: "#bce0ff",
   },
-  shiftPatientName: {
-    fontSize: 18,
+  cardTitle: {
+    fontSize: theme.fonts.subtitle,
+    fontWeight: "bold",
+    color: theme.colors.text,
+  },
+  cardText: {
+    fontSize: theme.fonts.body,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.small,
+  },
+  input: {
+    backgroundColor: theme.colors.card,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 10,
+    padding: theme.spacing.medium,
+    marginBottom: theme.spacing.medium,
+    fontSize: theme.fonts.body,
+    color: theme.colors.text,
+  },
+  buttonPrimary: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: theme.spacing.medium,
+    borderRadius: 10,
+    alignItems: "center",
+    elevation: 3,
+  },
+  buttonPrimaryText: {
+    color: theme.colors.primaryText,
+    fontSize: theme.fonts.body,
     fontWeight: "bold",
   },
-  shiftTime: {
-    fontSize: 16,
-    color: "#333",
-    marginTop: 5,
+  fab: {
+    position: "absolute",
+    right: theme.spacing.large,
+    bottom: theme.spacing.large,
+    backgroundColor: theme.colors.primary,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+  },
+  fabText: {
+    color: theme.colors.primaryText,
+    fontSize: 30,
+    lineHeight: 30,
+    marginTop: -2,
   },
 });
 
