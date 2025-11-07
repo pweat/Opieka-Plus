@@ -39,16 +39,18 @@ const ScheduleVisitScreen = ({
   const [tasks, setTasks] = useState<string[]>([]);
   const [currentTask, setCurrentTask] = useState("");
 
-  // Pobieranie opiekunów (bez zmian)
+  // Pobieranie opiekunów (TERAZ POBIERA PEŁEN PROFIL)
   useEffect(() => {
     const fetchCaregivers = async () => {
       const patientDocRef = doc(db, "patients", patientId);
       const patientDoc = await getDoc(patientDocRef);
       if (patientDoc.exists() && patientDoc.data().caregiverIds) {
         const caregiverIds = patientDoc.data().caregiverIds;
+        // Pobieramy pełne dane użytkownika (w tym 'name' i 'email')
         const caregiversData = await Promise.all(
           caregiverIds.map(async (id: string) => {
             const userDoc = await getDoc(doc(db, "users", id));
+            // Zwracamy cały dokument użytkownika
             return userDoc.exists()
               ? { id: userDoc.id, ...userDoc.data() }
               : null;
@@ -133,8 +135,7 @@ const ScheduleVisitScreen = ({
   return (
     <ScrollView style={styles.container}>
       {/* Sekcja wyboru opiekuna */}
-      <Text style={styles.label}>Wybierz opiekunkę/opiekuna:</Text>{" "}
-      {/* <--- POPRAWKA ETYKIETY */}
+      <Text style={styles.label}>Wybierz opiekunkę/opiekuna:</Text>
       <View style={styles.pillsContainer}>
         {caregivers.length > 0 ? (
           caregivers.map((cg) => (
@@ -146,14 +147,14 @@ const ScheduleVisitScreen = ({
               ]}
               onPress={() => setSelectedCaregiver(cg)}
             >
-              {/* TODO: Zmienić cg.email na cg.name, gdy dodamy imię do rejestracji */}
+              {/* POPRAWKA: Wyświetlamy imię, a jeśli go nie ma - e-mail */}
               <Text
                 style={[
                   styles.pillText,
                   selectedCaregiver?.id === cg.id && styles.selectedPillText,
                 ]}
               >
-                {cg.email}
+                {cg.name || cg.email}
               </Text>
             </TouchableOpacity>
           ))
@@ -163,7 +164,8 @@ const ScheduleVisitScreen = ({
           </Text>
         )}
       </View>
-      {/* Sekcja Daty i Czasu */}
+
+      {/* Sekcja Daty i Czasu (reszta bez zmian) */}
       <Text style={styles.label}>Data wizyty:</Text>
       <TouchableOpacity
         style={styles.pickerButton}
@@ -207,13 +209,13 @@ const ScheduleVisitScreen = ({
           </TouchableOpacity>
         </View>
       </View>
-      {/* Modale DateTimePicker (bez zmian) */}
+
       <DateTimePickerModal
         isVisible={isDatePickerVisible}
         mode="date"
         onConfirm={handleConfirmDate}
         onCancel={() => setDatePickerVisibility(false)}
-        locale="pl_PL"
+        locale="pl-PL"
         confirmTextIOS="Potwierdź"
         cancelTextIOS="Anuluj"
         minimumDate={new Date()}
@@ -238,6 +240,7 @@ const ScheduleVisitScreen = ({
         cancelTextIOS="Anuluj"
         is24Hour={true}
       />
+
       {/* Sekcja zadań (bez zmian) */}
       <Text style={styles.label}>Zadania do wykonania:</Text>
       <View style={styles.taskInputContainer}>
@@ -252,12 +255,13 @@ const ScheduleVisitScreen = ({
           <Text style={styles.addTaskButtonText}>Dodaj</Text>
         </TouchableOpacity>
       </View>
+
       {tasks.map((task, index) => (
         <View key={index} style={styles.taskItem}>
           <Text style={styles.taskText}>• {task}</Text>
         </View>
       ))}
-      {/* Przycisk "Zaplanuj" (bez zmian) */}
+
       <View style={styles.buttonContainer}>
         <TouchableOpacity
           style={styles.buttonPrimary}

@@ -17,12 +17,13 @@ import {
   getDoc,
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
-import { theme } from "../../theme"; // Pamiętamy o poprawnej ścieżce
+import { theme } from "../../theme";
 
 // Interfejs dla danych opiekuna
 interface CaregiverProfile {
   id: string;
   email: string;
+  name?: string; // Dodajemy opcjonalne imię
 }
 
 const ManageCaregiversScreen = ({ route }: { route: any }) => {
@@ -30,7 +31,7 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
   const [loading, setLoading] = useState(true);
   const [caregivers, setCaregivers] = useState<CaregiverProfile[]>([]);
 
-  // Pobieranie listy przypisanych opiekunów (bez zmian)
+  // POPRAWKA: Pobieramy pełny profil użytkownika
   useEffect(() => {
     const fetchAssignedCaregivers = async () => {
       setLoading(true);
@@ -44,7 +45,11 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
             caregiverIds.map(async (id) => {
               const userDoc = await getDoc(doc(db, "users", id));
               if (userDoc.exists()) {
-                return { id: userDoc.id, email: userDoc.data().email };
+                // Zwracamy cały profil, a nie tylko email
+                return {
+                  id: userDoc.id,
+                  ...userDoc.data(),
+                } as CaregiverProfile;
               }
               return null;
             })
@@ -95,7 +100,6 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
 
   return (
     <View style={styles.container}>
-      {/* Przycisk "Zaproś" w nowym stylu */}
       <TouchableOpacity
         style={styles.buttonPrimary}
         onPress={generateInviteCode}
@@ -105,14 +109,15 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
 
       <Text style={styles.title}>Przypisani Opiekunowie:</Text>
 
-      {/* Lista przypisanych opiekunów */}
       <FlatList
         data={caregivers}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          // Używamy stylu 'karty'
           <View style={styles.card}>
-            <Text style={styles.cardText}>{item.email}</Text>
+            {/* POPRAWKA: Wyświetlamy imię, a jeśli go nie ma - e-mail */}
+            <Text style={styles.cardTitle}>{item.name || item.email}</Text>
+            {/* Pokazujemy e-mail jako drugą informację, jeśli jest imię */}
+            {item.name && <Text style={styles.cardText}>{item.email}</Text>}
           </View>
         )}
         ListEmptyComponent={
@@ -128,19 +133,18 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: theme.spacing.large,
-    backgroundColor: theme.colors.background, // Tło z motywu
+    backgroundColor: theme.colors.background,
   },
   loadingContainer: {
     justifyContent: "center",
     alignItems: "center",
   },
-  // Styl głównego przycisku
   buttonPrimary: {
     backgroundColor: theme.colors.primary,
     paddingVertical: theme.spacing.medium,
     borderRadius: 10,
     alignItems: "center",
-    marginBottom: theme.spacing.large, // Odstęp od listy
+    marginBottom: theme.spacing.large,
     elevation: 3,
   },
   buttonPrimaryText: {
@@ -154,7 +158,6 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.medium,
     color: theme.colors.text,
   },
-  // Styl dla karty opiekuna
   card: {
     backgroundColor: theme.colors.card,
     padding: theme.spacing.medium,
@@ -163,9 +166,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#eee",
   },
-  cardText: {
+  cardTitle: {
     fontSize: theme.fonts.body,
     color: theme.colors.text,
+    fontWeight: "bold",
+  },
+  cardText: {
+    fontSize: 14, // Trochę mniejszy
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.small / 2,
   },
   emptyText: {
     color: theme.colors.textSecondary,

@@ -7,10 +7,12 @@ import {
   Alert,
   TouchableOpacity,
   SafeAreaView,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform, // 1. IMPORTUJEMY KeyboardAvoidingView i Platform
 } from "react-native";
-// Importujemy bazę danych, motyw i funkcje autoryzacji
 import { auth, db } from "../../firebaseConfig";
-import { theme } from "../../theme"; // Poprawna ścieżka to ../theme
+import { theme } from "../../theme";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 
@@ -21,13 +23,15 @@ const RegisterScreen = ({
   route: any;
   navigation: any;
 }) => {
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const { selectedRole } = route.params;
 
+  // Funkcja handleRegister (bez zmian)
   const handleRegister = async () => {
-    if (!email || !password || password !== confirmPassword) {
+    if (!name || !email || !password || password !== confirmPassword) {
       Alert.alert(
         "Błąd",
         "Sprawdź, czy wszystkie pola są wypełnione i czy hasła są identyczne."
@@ -35,7 +39,6 @@ const RegisterScreen = ({
       return;
     }
     try {
-      // Krok 1: Utwórz użytkownika w Auth
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         email,
@@ -43,15 +46,14 @@ const RegisterScreen = ({
       );
       const user = userCredential.user;
 
-      // Krok 2: Zapisz rolę w Firestore
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
+        name: name,
         email: user.email,
         role: selectedRole,
         createdAt: new Date(),
       });
 
-      // Nie musimy już nawigować, RootNavigator sam wykryje zalogowanie
       Alert.alert("Sukces!", "Konto zostało pomyślnie utworzone.");
     } catch (error: any) {
       if (error.code === "auth/email-already-in-use") {
@@ -65,54 +67,80 @@ const RegisterScreen = ({
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Stwórz konto</Text>
-      <Text style={styles.subtitle}>
-        Jako:{" "}
-        {selectedRole === "opiekun_glowny"
-          ? "Opiekun Główny"
-          : "Opiekun / Opiekunka"}
-      </Text>
+    // 2. Używamy KeyboardAvoidingView jako głównego kontenera
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"} // Automatyczne dopasowanie
+      style={styles.kbContainer}
+    >
+      <ScrollView
+        style={styles.container} // Tło
+        contentContainerStyle={styles.scrollContainer} // Wyśrodkowanie
+        keyboardShouldPersistTaps="handled" // Pozwala klikać przycisk, gdy klawiatura jest otwarta
+      >
+        <Text style={styles.title}>Stwórz konto</Text>
+        <Text style={styles.subtitle}>
+          Jako:{" "}
+          {selectedRole === "opiekun_glowny"
+            ? "Opiekun Główny"
+            : "Opiekun / Opiekunka"}
+        </Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Adres e-mail"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-        placeholderTextColor={theme.colors.textSecondary}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Hasło (min. 6 znaków)"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        placeholderTextColor={theme.colors.textSecondary}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Potwierdź hasło"
-        value={confirmPassword}
-        onChangeText={setConfirmPassword}
-        secureTextEntry
-        placeholderTextColor={theme.colors.textSecondary}
-      />
+        <TextInput
+          style={styles.input}
+          placeholder="Twoje Imię"
+          value={name}
+          onChangeText={setName}
+          autoCapitalize="words"
+          placeholderTextColor={theme.colors.textSecondary}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Adres e-mail"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          placeholderTextColor={theme.colors.textSecondary}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Hasło (min. 6 znaków)"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          placeholderTextColor={theme.colors.textSecondary}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Potwierdź hasło"
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+          secureTextEntry
+          placeholderTextColor={theme.colors.textSecondary}
+        />
 
-      {/* Przycisk "Zarejestruj się" */}
-      <TouchableOpacity style={styles.buttonPrimary} onPress={handleRegister}>
-        <Text style={styles.buttonPrimaryText}>Zarejestruj się</Text>
-      </TouchableOpacity>
-    </SafeAreaView>
+        <TouchableOpacity style={styles.buttonPrimary} onPress={handleRegister}>
+          <Text style={styles.buttonPrimaryText}>Zarejestruj się</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
-// Style z pliku theme.ts
+// 3. AKTUALIZUJEMY STYLE
 const styles = StyleSheet.create({
+  kbContainer: {
+    // Nowy styl dla KeyboardAvoidingView
+    flex: 1,
+  },
   container: {
+    // Ten styl jest teraz dla tła ScrollView
     flex: 1,
     backgroundColor: theme.colors.background,
+  },
+  scrollContainer: {
+    // Ten styl centruje zawartość
+    flexGrow: 1,
     justifyContent: "center",
     padding: theme.spacing.large,
   },
@@ -121,7 +149,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: theme.colors.text,
     textAlign: "center",
-    marginBottom: theme.spacing.small, // Mniejszy margines
+    marginBottom: theme.spacing.small,
   },
   subtitle: {
     fontSize: theme.fonts.body,
@@ -144,7 +172,7 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.medium,
     borderRadius: 10,
     alignItems: "center",
-    marginTop: theme.spacing.small, // Mały margines nad przyciskiem
+    marginTop: theme.spacing.small,
     elevation: 3,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },

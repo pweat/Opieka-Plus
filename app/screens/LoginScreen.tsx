@@ -7,16 +7,19 @@ import {
   Alert,
   TouchableOpacity,
   SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView, // 1. Importujemy potrzebne moduły
 } from "react-native";
 import { auth } from "../../firebaseConfig";
 import { signInWithEmailAndPassword } from "firebase/auth";
-// Importujemy nasz motyw!
 import { theme } from "../../theme";
 
 const LoginScreen = ({ navigation }: { navigation: any }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  // Funkcja handleLogin (bez zmian)
   const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert("Błąd", "Proszę podać e-mail i hasło.");
@@ -24,7 +27,6 @@ const LoginScreen = ({ navigation }: { navigation: any }) => {
     }
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // Alert o sukcesie został usunięty (zgodnie z Twoją prośbą)
     } catch (error: any) {
       if (
         error.code === "auth/user-not-found" ||
@@ -38,53 +40,68 @@ const LoginScreen = ({ navigation }: { navigation: any }) => {
   };
 
   return (
+    // 2. Używamy SafeAreaView jako głównego kontenera tła
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Zaloguj się</Text>
-
-      {/* Nowe, stylizowane pole tekstowe */}
-      <TextInput
-        style={styles.input}
-        placeholder="Adres e-mail"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-        placeholderTextColor={theme.colors.textSecondary}
-      />
-
-      {/* Nowe, stylizowane pole tekstowe */}
-      <TextInput
-        style={styles.input}
-        placeholder="Hasło"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        placeholderTextColor={theme.colors.textSecondary}
-      />
-
-      {/* Nasz nowy, główny przycisk */}
-      <TouchableOpacity style={styles.buttonPrimary} onPress={handleLogin}>
-        <Text style={styles.buttonPrimaryText}>Zaloguj się</Text>
-      </TouchableOpacity>
-
-      {/* Nasz nowy, dodatkowy przycisk */}
-      <TouchableOpacity
-        style={styles.buttonSecondary}
-        onPress={() => navigation.navigate("RoleSelection")}
+      {/* 3. Dodajemy KeyboardAvoidingView z behavior="padding" */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "padding"}
+        style={styles.kbContainer}
       >
-        <Text style={styles.buttonSecondaryText}>
-          Nie masz konta? Zarejestruj się
-        </Text>
-      </TouchableOpacity>
+        {/* 4. Dodajemy ScrollView, aby ekran działał na mniejszych telefonach */}
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={styles.title}>Zaloguj się</Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Adres e-mail"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            placeholderTextColor={theme.colors.textSecondary}
+          />
+
+          <TextInput
+            style={styles.input}
+            placeholder="Hasło"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            placeholderTextColor={theme.colors.textSecondary}
+          />
+
+          <TouchableOpacity style={styles.buttonPrimary} onPress={handleLogin}>
+            <Text style={styles.buttonPrimaryText}>Zaloguj się</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.buttonSecondary}
+            onPress={() => navigation.navigate("RoleSelection")}
+          >
+            <Text style={styles.buttonSecondaryText}>
+              Nie masz konta? Zarejestruj się
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
 
-// Nowe style z pliku theme.ts
+// 5. Aktualizujemy style
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
+  },
+  kbContainer: {
+    flex: 1,
+  },
+  scrollContainer: {
+    flexGrow: 1, // Kluczowe: pozwala zawartości rosnąć i centrować się
     justifyContent: "center",
     padding: theme.spacing.large,
   },
@@ -95,18 +112,16 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: theme.spacing.large,
   },
-  // Styl dla naszych pól tekstowych
   input: {
-    backgroundColor: theme.colors.card, // Tło 'karty' (białe)
+    backgroundColor: theme.colors.card,
     borderWidth: 1,
-    borderColor: "#ddd", // Delikatna ramka
+    borderColor: "#ddd",
     borderRadius: 10,
     padding: theme.spacing.medium,
     marginBottom: theme.spacing.medium,
     fontSize: theme.fonts.body,
     color: theme.colors.text,
   },
-  // Style przycisków (takie same jak na WelcomeScreen)
   buttonPrimary: {
     backgroundColor: theme.colors.primary,
     paddingVertical: theme.spacing.medium,
@@ -114,10 +129,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: theme.spacing.medium,
     elevation: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
   },
   buttonPrimaryText: {
     color: theme.colors.primaryText,

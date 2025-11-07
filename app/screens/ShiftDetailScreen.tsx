@@ -8,9 +8,11 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { db } from "../../firebaseConfig";
-import { theme } from "../../theme"; // Importujemy motyw
+import { theme } from "../../theme";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 
 // Typy (bez zmian)
@@ -28,14 +30,14 @@ interface ShiftDetails {
 }
 
 const ShiftDetailScreen = ({ route }: { route: any }) => {
+  // Cała logika (useState, useEffect, funkcje handle...)
+  // pozostaje BEZ ZMIAN.
   const { shiftId } = route.params;
   const [loading, setLoading] = useState(true);
   const [shift, setShift] = useState<ShiftDetails | null>(null);
   const [notes, setNotes] = useState("");
-
   const shiftDocRef = doc(db, "shifts", shiftId);
 
-  // Funkcja pobierania danych (bez zmian)
   useEffect(() => {
     const fetchShiftDetails = async () => {
       setLoading(true);
@@ -63,7 +65,6 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
     fetchShiftDetails();
   }, [shiftId]);
 
-  // Funkcja odhaczania zadań (bez zmian)
   const handleToggleTask = async (taskIndex: number) => {
     if (!shift) return;
     const newTasks = [...shift.tasks];
@@ -76,7 +77,6 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
     }
   };
 
-  // Funkcja aktualizacji raportu (bez zmian)
   const handleUpdateReport = async (field: keyof ShiftDetails, value: any) => {
     if (!shift) return;
     setShift((prevShift) => ({ ...prevShift!, [field]: value }));
@@ -84,6 +84,15 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
       await updateDoc(shiftDocRef, { [field]: value });
     } catch (error) {
       Alert.alert("Błąd", `Nie udało się zapisać pola: ${field}.`);
+    }
+  };
+
+  const handleSaveNotes = async () => {
+    try {
+      await updateDoc(shiftDocRef, { notes: notes });
+      Alert.alert("Sukces", "Notatki zostały zapisane.");
+    } catch (error) {
+      Alert.alert("Błąd", "Nie udało się zapisać notatek.");
     }
   };
 
@@ -104,142 +113,172 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.patientName}>{shift.patientName}</Text>
+    // 1. Używamy KeyboardAvoidingView z behavior="padding"
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "padding"}
+      style={styles.kbContainer}
+    >
+      {/* 2. ScrollView jest wewnątrz */}
+      <ScrollView
+        style={styles.container} // Styl tła
+        contentContainerStyle={styles.scrollContainer} // Styl zawartości
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.patientName}>{shift.patientName}</Text>
 
-      {/* SEKCJA ZADAŃ */}
-      <Text style={styles.title}>Zadania na dziś:</Text>
-      {shift.tasks.length > 0 ? (
-        shift.tasks.map((item, index) => (
-          <TouchableOpacity
-            key={`${item.description}-${index}`}
-            style={styles.taskCard} // Używamy stylu karty
-            onPress={() => handleToggleTask(index)}
-          >
-            <View style={[styles.checkbox, item.isDone && styles.checkboxDone]}>
-              {item.isDone && <Text style={styles.checkmark}>✔</Text>}
-            </View>
-            <Text
-              style={[styles.taskDescription, item.isDone && styles.taskDone]}
+        {/* SEKCJA ZADAŃ */}
+        <Text style={styles.title}>Zadania na dziś:</Text>
+        {shift.tasks.length > 0 ? (
+          shift.tasks.map((item, index) => (
+            <TouchableOpacity
+              key={`${item.description}-${index}`}
+              style={styles.taskCard}
+              onPress={() => handleToggleTask(index)}
             >
-              {item.description}
+              <View
+                style={[styles.checkbox, item.isDone && styles.checkboxDone]}
+              >
+                {item.isDone && <Text style={styles.checkmark}>✔</Text>}
+              </View>
+              <Text
+                style={[styles.taskDescription, item.isDone && styles.taskDone]}
+              >
+                {item.description}
+              </Text>
+            </TouchableOpacity>
+          ))
+        ) : (
+          <Text style={styles.emptyText}>Brak zadań na tę wizytę.</Text>
+        )}
+
+        {/* SEKCJA NASTRÓJ */}
+        <Text style={styles.title}>Nastrój podopiecznego:</Text>
+        <View style={styles.optionsContainer}>
+          <TouchableOpacity
+            style={[
+              styles.moodButton,
+              shift.mood === "happy" && styles.moodSelected,
+            ]}
+            onPress={() => handleUpdateReport("mood", "happy")}
+          >
+            <Text style={styles.moodEmoji}>😄</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.moodButton,
+              shift.mood === "neutral" && styles.moodSelected,
+            ]}
+            onPress={() => handleUpdateReport("mood", "neutral")}
+          >
+            <Text style={styles.moodEmoji}>🙂</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.moodButton,
+              shift.mood === "sad" && styles.moodSelected,
+            ]}
+            onPress={() => handleUpdateReport("mood", "sad")}
+          >
+            <Text style={styles.moodEmoji}>😟</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* SEKCJA ENERGIA */}
+        <Text style={styles.title}>Poziom energii:</Text>
+        <View style={styles.optionsContainer}>
+          <TouchableOpacity
+            style={[
+              styles.optionButton,
+              shift.energy === "low" && styles.optionSelected,
+            ]}
+            onPress={() => handleUpdateReport("energy", "low")}
+          >
+            <Text
+              style={[
+                styles.optionText,
+                shift.energy === "low" && styles.optionSelectedText,
+              ]}
+            >
+              Mało
             </Text>
           </TouchableOpacity>
-        ))
-      ) : (
-        <Text style={styles.emptyText}>Brak zadań na tę wizytę.</Text>
-      )}
-
-      {/* SEKCJA NASTRÓJ */}
-      <Text style={styles.title}>Nastrój podopiecznego:</Text>
-      <View style={styles.optionsContainer}>
-        <TouchableOpacity
-          style={[
-            styles.moodButton,
-            shift.mood === "happy" && styles.moodSelected,
-          ]}
-          onPress={() => handleUpdateReport("mood", "happy")}
-        >
-          <Text style={styles.moodEmoji}>😄</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.moodButton,
-            shift.mood === "neutral" && styles.moodSelected,
-          ]}
-          onPress={() => handleUpdateReport("mood", "neutral")}
-        >
-          <Text style={styles.moodEmoji}>🙂</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.moodButton,
-            shift.mood === "sad" && styles.moodSelected,
-          ]}
-          onPress={() => handleUpdateReport("mood", "sad")}
-        >
-          <Text style={styles.moodEmoji}>😟</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* SEKCJA ENERGIA */}
-      <Text style={styles.title}>Poziom energii:</Text>
-      <View style={styles.optionsContainer}>
-        <TouchableOpacity
-          style={[
-            styles.optionButton,
-            shift.energy === "low" && styles.optionSelected,
-          ]}
-          onPress={() => handleUpdateReport("energy", "low")}
-        >
-          <Text
+          <TouchableOpacity
             style={[
-              styles.optionText,
-              shift.energy === "low" && styles.optionSelectedText,
+              styles.optionButton,
+              shift.energy === "medium" && styles.optionSelected,
             ]}
+            onPress={() => handleUpdateReport("energy", "medium")}
           >
-            Mało
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.optionButton,
-            shift.energy === "medium" && styles.optionSelected,
-          ]}
-          onPress={() => handleUpdateReport("energy", "medium")}
-        >
-          <Text
+            <Text
+              style={[
+                styles.optionText,
+                shift.energy === "medium" && styles.optionSelectedText,
+              ]}
+            >
+              Średnio
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[
-              styles.optionText,
-              shift.energy === "medium" && styles.optionSelectedText,
+              styles.optionButton,
+              shift.energy === "high" && styles.optionSelected,
             ]}
+            onPress={() => handleUpdateReport("energy", "high")}
           >
-            Średnio
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.optionButton,
-            shift.energy === "high" && styles.optionSelected,
-          ]}
-          onPress={() => handleUpdateReport("energy", "high")}
-        >
-          <Text
-            style={[
-              styles.optionText,
-              shift.energy === "high" && styles.optionSelectedText,
-            ]}
-          >
-            Dużo
-          </Text>
-        </TouchableOpacity>
-      </View>
+            <Text
+              style={[
+                styles.optionText,
+                shift.energy === "high" && styles.optionSelectedText,
+              ]}
+            >
+              Dużo
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-      {/* SEKCJA NOTATKI */}
-      <Text style={styles.title}>Dodatkowe notatki:</Text>
-      <TextInput
-        style={styles.notesInput}
-        placeholder="Wpisz swoje obserwacje..."
-        placeholderTextColor={theme.colors.textSecondary}
-        multiline
-        value={notes}
-        onChangeText={setNotes}
-        onBlur={() => handleUpdateReport("notes", notes)}
-      />
-    </ScrollView>
+        {/* SEKCJA NOTATKI */}
+        <Text style={styles.title}>Dodatkowe notatki:</Text>
+        <TextInput
+          style={styles.notesInput}
+          placeholder="Wpisz swoje obserwacje..."
+          placeholderTextColor={theme.colors.textSecondary}
+          multiline
+          value={notes}
+          onChangeText={setNotes}
+        />
+
+        <TouchableOpacity
+          style={styles.buttonPrimary}
+          onPress={handleSaveNotes}
+        >
+          <Text style={styles.buttonPrimaryText}>Zapisz Notatki</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
-// Nowy, kompletny arkusz stylów z motywem
+// 3. AKTUALIZUJEMY STYLE
 const styles = StyleSheet.create({
-  container: {
+  kbContainer: {
     flex: 1,
+    backgroundColor: theme.colors.background, // Tło dla całego KAV
+  },
+  container: {
+    // Ten styl jest teraz *tylko* dla ScrollView
+    flex: 1, // Pozwalamy mu zająć całą dostępną przestrzeń
+  },
+  scrollContainer: {
+    // Styl dla *zawartości* wewnątrz ScrollView
     padding: theme.spacing.large,
-    backgroundColor: theme.colors.background, // Tło z motywu
+    flexGrow: 1, // Pozwala zawartości rosnąć
   },
   loadingContainer: {
+    flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: theme.colors.background,
+    padding: theme.spacing.large,
   },
   patientName: {
     fontSize: theme.fonts.title,
@@ -256,7 +295,7 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.medium,
   },
   taskCard: {
-    backgroundColor: theme.colors.card, // Białe tło
+    backgroundColor: theme.colors.card,
     padding: theme.spacing.medium,
     borderRadius: 10,
     marginBottom: theme.spacing.small,
@@ -272,17 +311,17 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 4,
     borderWidth: 2,
-    borderColor: theme.colors.primary, // Brązowa ramka
+    borderColor: theme.colors.primary,
     marginRight: theme.spacing.medium,
     alignItems: "center",
     justifyContent: "center",
   },
   checkboxDone: {
-    backgroundColor: theme.colors.primary, // Wypełnienie brązowe
+    backgroundColor: theme.colors.primary,
   },
   checkmark: {
     fontSize: 14,
-    color: theme.colors.primaryText, // Biały ptaszek
+    color: theme.colors.primaryText,
   },
   taskDescription: {
     fontSize: theme.fonts.body,
@@ -315,8 +354,8 @@ const styles = StyleSheet.create({
     fontSize: 40,
   },
   moodSelected: {
-    backgroundColor: "#e0e0e0", // Lepsze podświetlenie
-    borderColor: theme.colors.primary, // Brązowa ramka
+    backgroundColor: "#e0e0e0",
+    borderColor: theme.colors.primary,
   },
   optionButton: {
     flex: 1,
@@ -324,19 +363,19 @@ const styles = StyleSheet.create({
     marginHorizontal: theme.spacing.small / 2,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: theme.colors.primary, // Brązowa ramka
-    backgroundColor: theme.colors.card, // Białe tło
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.card,
     alignItems: "center",
   },
   optionSelected: {
-    backgroundColor: theme.colors.primary, // Brązowe tło
+    backgroundColor: theme.colors.primary,
   },
   optionText: {
     fontSize: theme.fonts.body,
-    color: theme.colors.primary, // Brązowy tekst
+    color: theme.colors.primary,
   },
   optionSelectedText: {
-    color: theme.colors.primaryText, // Biały tekst
+    color: theme.colors.primaryText,
     fontWeight: "bold",
   },
   notesInput: {
@@ -348,8 +387,21 @@ const styles = StyleSheet.create({
     fontSize: theme.fonts.body,
     minHeight: 120,
     textAlignVertical: "top",
-    marginBottom: 50,
     color: theme.colors.text,
+  },
+  buttonPrimary: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: theme.spacing.medium,
+    borderRadius: 10,
+    alignItems: "center",
+    elevation: 3,
+    marginTop: theme.spacing.medium,
+    marginBottom: theme.spacing.large, // Zmniejszony margines dolny, aby lepiej pasował
+  },
+  buttonPrimaryText: {
+    color: theme.colors.primaryText,
+    fontSize: theme.fonts.body,
+    fontWeight: "bold",
   },
 });
 

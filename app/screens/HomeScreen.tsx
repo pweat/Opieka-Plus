@@ -35,6 +35,7 @@ interface UserProfile {
   uid: string;
   email: string;
   role: "opiekun_glowny" | "opiekun";
+  name?: string;
 }
 interface PatientProfile {
   id: string;
@@ -49,8 +50,7 @@ interface Shift {
 }
 
 const HomeScreen = ({ navigation }: { navigation: any }) => {
-  // Cała logika (useState, useEffect, fetchData, handleJoin, handleLogout)
-  // pozostaje BEZ ZMIAN.
+  // Logika (bez zmian)
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [patients, setPatients] = useState<PatientProfile[]>([]);
@@ -112,7 +112,6 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     }
     setLoading(false);
   };
-
   const handleJoinWithCode = async () => {
     if (inviteCode.trim() === "")
       return Alert.alert("Błąd", "Wpisz kod zaproszenia.");
@@ -169,7 +168,6 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
       Alert.alert("Błąd", "Wystąpił problem podczas dołączania.");
     }
   };
-
   const handleLogout = () => {
     signOut(auth);
   };
@@ -182,10 +180,11 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     );
   }
 
-  // Funkcje renderOwnerView i renderCaregiverView (bez zmian)
+  // Funkcja renderująca widok Opiekuna
   const renderCaregiverView = () => (
     <View style={styles.content}>
       {patients.length > 0 ? (
+        // Widok harmonogramu (bez zmian)
         <>
           <Text style={styles.title}>Twój harmonogram</Text>
           <FlatList
@@ -228,8 +227,14 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
           />
         </>
       ) : (
+        // POPRAWKA: Lepszy tekst w widoku dołączania
         <>
-          <Text style={styles.title}>Dołącz do profilu</Text>
+          <Text style={styles.title}>Witaj!</Text>
+          <Text style={styles.emptyText}>
+            Nie jesteś jeszcze przypisany do żadnego podopiecznego. Poproś
+            Opiekuna Głównego o 6-cyfrowy kod zaproszenia i wprowadź go poniżej,
+            aby dołączyć do profilu.
+          </Text>
           <TextInput
             style={styles.input}
             placeholder="Wpisz 6-cyfrowy kod"
@@ -250,6 +255,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     </View>
   );
 
+  // Widok Opiekuna Głównego (bez zmian)
   const renderOwnerView = () => (
     <View style={styles.content}>
       <Text style={styles.title}>Twoi podopieczni</Text>
@@ -284,18 +290,17 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={theme.colors.card} />
-
       <View style={styles.header}>
-        <Text style={styles.welcomeText}>Witaj, {userProfile?.email}!</Text>
+        <Text style={styles.welcomeText} numberOfLines={1}>
+          Witaj, {userProfile?.name || userProfile?.email}!
+        </Text>
         <TouchableOpacity onPress={handleLogout}>
           <Text style={styles.logoutText}>Wyloguj się</Text>
         </TouchableOpacity>
       </View>
-
       {userProfile?.role === "opiekun_glowny"
         ? renderOwnerView()
         : renderCaregiverView()}
-
       {userProfile?.role === "opiekun_glowny" && (
         <TouchableOpacity
           style={styles.fab}
@@ -308,7 +313,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
   );
 };
 
-// === ARKUSZ STYLÓW Z POPRAWKAMI ===
+// Style (bez zmian, ale dodaję małą modyfikację do 'input' i 'emptyText')
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -327,14 +332,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.card,
     paddingHorizontal: theme.spacing.large,
     paddingBottom: theme.spacing.medium,
-
-    // === POPRAWKA TUTAJ ===
-    // Najpierw sprawdzamy, czy jesteśmy na Androidzie.
-    // Jeśli tak, używamy `StatusBar.currentHeight` (lub 0, jeśli jest undefined) i dodajemy 10.
-    // Jeśli jesteśmy na iOS, używamy stałej wartości 50.
     paddingTop:
       Platform.OS === "android" ? (StatusBar.currentHeight || 0) + 10 : 50,
-
     borderBottomWidth: 1,
     borderBottomColor: "#ddd",
     elevation: 3,
@@ -373,8 +372,8 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     textAlign: "center",
     marginTop: theme.spacing.large,
+    lineHeight: 22, // POPRAWKA: Lepsza czytelność dłuższego tekstu
   },
-  // Reszta stylów (karty, przyciski, FAB) pozostaje bez zmian
   patientCard: {
     backgroundColor: theme.colors.card,
     padding: theme.spacing.medium,
@@ -413,6 +412,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.medium,
     fontSize: theme.fonts.body,
     color: theme.colors.text,
+    marginTop: theme.spacing.large, // POPRAWKA: Odstęp od tekstu
   },
   buttonPrimary: {
     backgroundColor: theme.colors.primary,
