@@ -6,6 +6,7 @@ import PatientDetailScreen from "../screens/PatientDetailScreen";
 import ManageCaregiversScreen from "../screens/ManageCaregiversScreen";
 import ScheduleVisitScreen from "../screens/ScheduleVisitScreen";
 import ShiftDetailScreen from "../screens/ShiftDetailScreen";
+import ReportDetailScreen from "../screens/ReportDetailScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -40,6 +41,11 @@ const AppNavigator = () => {
       <Stack.Screen
         name="ShiftDetail"
         component={ShiftDetailScreen}
+        options={{ title: "Raport z Wizyty" }}
+      />
+      <Stack.Screen
+        name="ReportDetail"
+        component={ReportDetailScreen}
         options={{ title: "Raport z Wizyty" }}
       />
     </Stack.Navigator>
