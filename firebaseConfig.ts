@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
-// Ta ścieżka importu TERAZ BĘDZIE POPRAWNA:
 import { initializeAuth } from "firebase/auth";
+// Ta ścieżka JEST POPRAWNA, gdy zainstalują się właściwe pakiety
 import { getReactNativePersistence } from "firebase/auth/react-native";
 import { getFirestore } from "firebase/firestore";
 import ReactNativeAsyncStorage from "@react-native-async-storage/async-storage";
