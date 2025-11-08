@@ -1,6 +1,10 @@
+// === POPRAWKA TUTAJ ===
+// Importujemy "polyfill" jako PIERWSZĄ rzecz w tym pliku.
+// To gwarantuje, że "global" zostanie zainstalowany ZANIM zaimportujemy "firebase/auth".
+import "react-native-get-random-values";
+
 import { initializeApp } from "firebase/app";
 import { initializeAuth } from "firebase/auth";
-// Ta ścieżka JEST POPRAWNA, gdy zainstalują się właściwe pakiety
 import { getReactNativePersistence } from "firebase/auth/react-native";
 import { getFirestore } from "firebase/firestore";
 import ReactNativeAsyncStorage from "@react-native-async-storage/async-storage";
