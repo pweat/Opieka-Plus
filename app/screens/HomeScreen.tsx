@@ -30,25 +30,25 @@ import {
 } from "firebase/firestore";
 import { useIsFocused } from "@react-navigation/native";
 
-// Interfejsy
 interface UserProfile {
   uid: string;
   email: string;
   role: "opiekun_glowny" | "opiekun";
   name?: string;
 }
-// DODANO photoURL
 interface PatientProfile {
   id: string;
   name: string;
   description: string;
   photoURL?: string;
 }
+// DODANO status do interfejsu Shift
 interface Shift {
   id: string;
   patientName: string;
   start: Timestamp;
   end: Timestamp;
+  status: string;
 }
 
 const HomeScreen = ({ navigation }: { navigation: any }) => {
@@ -71,6 +71,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
       if (userDoc.exists()) {
         const profile = userDoc.data() as UserProfile;
         setUserProfile(profile);
+
         if (profile.role === "opiekun_glowny") {
           const q = query(
             collection(db, "patients"),
@@ -92,17 +93,27 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
             (doc) => ({ id: doc.id, ...doc.data() } as PatientProfile)
           );
           setPatients(patientsList);
+
           if (patientsList.length > 0) {
             const shiftQuery = query(
               collection(db, "shifts"),
               where("caregiverId", "==", user.uid)
             );
             const shiftSnapshot = await getDocs(shiftQuery);
-            const shiftsList = shiftSnapshot.docs.map(
+            const allShifts = shiftSnapshot.docs.map(
               (doc) => ({ id: doc.id, ...doc.data() } as Shift)
             );
-            shiftsList.sort((a, b) => a.start.toMillis() - b.start.toMillis());
-            setShifts(shiftsList);
+
+            // === FILTROWANIE ===
+            // Pokazujemy tylko te, które NIE są 'completed'
+            const activeShifts = allShifts.filter(
+              (s) => s.status !== "completed"
+            );
+
+            activeShifts.sort(
+              (a, b) => a.start.toMillis() - b.start.toMillis()
+            );
+            setShifts(activeShifts);
           } else {
             setShifts([]);
           }
@@ -153,7 +164,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
         ...prev,
         { id: patientId, name: patientDoc.data()?.name || "", description: "" },
       ]);
-      setShifts([]);
+      setShifts([]); // Po dołączeniu na pewno nie ma jeszcze wizyt
       setLoading(false);
       Alert.alert("Sukces!", "Dołączyłeś do profilu.");
     } catch (error) {
@@ -175,7 +186,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     <View style={styles.content}>
       {patients.length > 0 ? (
         <>
-          <Text style={styles.title}>Twój harmonogram</Text>
+          <Text style={styles.title}>Zaplanowane wizyty</Text>
           <FlatList
             data={shifts}
             keyExtractor={(item) => item.id}
@@ -208,13 +219,20 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
               </TouchableOpacity>
             )}
             ListEmptyComponent={
-              <Text style={styles.emptyText}>Brak zaplanowanych wizyt.</Text>
+              <View style={styles.emptyStateContainer}>
+                <Text style={styles.emptyText}>
+                  Brak zadań na horyzoncie! 🎉
+                </Text>
+                <Text style={styles.subEmptyText}>
+                  Wszystkie wizyty zostały zakończone.
+                </Text>
+              </View>
             }
           />
         </>
       ) : (
         <>
-          <Text style={styles.title}>Dołącz do profilu</Text>
+          <Text style={styles.title}>Witaj!</Text>
           <Text style={styles.emptyText}>
             Nie masz jeszcze podopiecznych. Poproś o kod zaproszenia.
           </Text>
@@ -254,7 +272,6 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
               })
             }
           >
-            {/* ZDJĘCIE LUB ZAŚLEPKA */}
             <View style={styles.cardHeader}>
               {item.photoURL ? (
                 <Image source={{ uri: item.photoURL }} style={styles.avatar} />
@@ -353,7 +370,13 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.large,
     lineHeight: 22,
   },
-  // STYLE KARTY Z AWATAREM
+  subEmptyText: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    textAlign: "center",
+    marginTop: 5,
+  },
+  emptyStateContainer: { alignItems: "center", marginTop: 50 },
   patientCard: {
     backgroundColor: theme.colors.card,
     padding: theme.spacing.medium,
@@ -373,7 +396,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   avatarText: { color: "white", fontSize: 20, fontWeight: "bold" },
-
   shiftCard: {
     backgroundColor: "#e9f5ff",
     padding: theme.spacing.medium,

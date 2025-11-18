@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Alert,
   Image,
+  ScrollView,
 } from "react-native";
 import {
   doc,
@@ -17,9 +18,24 @@ import {
   where,
   getDocs,
   orderBy,
+  Timestamp,
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
 import { theme } from "../../theme";
+
+interface Shift {
+  id: string;
+  patientName: string;
+  caregiverId: string;
+  start: Timestamp;
+  status: string;
+}
+
+interface CaregiverInfo {
+  id: string;
+  name: string;
+  email: string;
+}
 
 const PatientDetailScreen = ({
   route,
@@ -31,35 +47,91 @@ const PatientDetailScreen = ({
   const { patientId } = route.params;
   const [loading, setLoading] = useState(true);
   const [patient, setPatient] = useState<any>(null);
-  const [shifts, setShifts] = useState<any[]>([]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+
+  const [caregiversMap, setCaregiversMap] = useState<{ [key: string]: string }>(
+    {}
+  );
+  const [caregiversList, setCaregiversList] = useState<CaregiverInfo[]>([]);
+  const [selectedFilter, setSelectedFilter] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
+        // 1. Dane pacjenta
         const patientDoc = await getDoc(doc(db, "patients", patientId));
-        if (patientDoc.exists()) {
-          setPatient({ id: patientDoc.id, ...patientDoc.data() });
-        } else {
-          return Alert.alert("Błąd", "Nie znaleziono podopiecznego.");
+        if (!patientDoc.exists()) {
+          Alert.alert("Błąd", "Nie znaleziono podopiecznego.");
+          setLoading(false);
+          return;
         }
+        const pData = patientDoc.data();
+        setPatient({ id: patientDoc.id, ...pData });
+
+        // 2. Historia wizyt
         const shiftsQuery = query(
           collection(db, "shifts"),
           where("patientId", "==", patientId),
           orderBy("start", "desc")
         );
         const querySnapshot = await getDocs(shiftsQuery);
-        setShifts(
-          querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+        const shiftsData = querySnapshot.docs.map(
+          (doc) => ({ id: doc.id, ...doc.data() } as Shift)
         );
+        setShifts(shiftsData);
+
+        // 3. Zbieranie ID opiekunów
+        const uniqueCaregiverIds = new Set<string>();
+        shiftsData.forEach((s) => {
+          if (s.caregiverId) uniqueCaregiverIds.add(s.caregiverId);
+        });
+        if (pData.caregiverIds) {
+          pData.caregiverIds.forEach((id: string) =>
+            uniqueCaregiverIds.add(id)
+          );
+        }
+
+        // 4. Pobieranie danych ORAZ obsługa błędów (brakujących userów)
+        const caregiversData = await Promise.all(
+          Array.from(uniqueCaregiverIds).map(async (id) => {
+            const u = await getDoc(doc(db, "users", id));
+            if (u.exists()) {
+              return { id: u.id, ...u.data() } as CaregiverInfo;
+            } else {
+              // Jeśli user nie istnieje (został usunięty z bazy), zwracamy "zaślepkę"
+              // To naprawi problem pustego pola dla "Kociołka" jeśli jego konto zniknęło
+              return {
+                id: id,
+                name: "Usunięty/Nieznany",
+                email: "",
+              } as CaregiverInfo;
+            }
+          })
+        );
+
+        const validCaregivers = caregiversData; // Teraz bierzemy wszystkich, nawet tych "Usuniętych"
+
+        // 5. Budowanie mapy
+        const map: { [key: string]: string } = {};
+        validCaregivers.forEach((c) => {
+          map[c.id] = c.name || c.email || "Bez nazwy";
+        });
+        setCaregiversMap(map);
+        setCaregiversList(validCaregivers);
       } catch (error) {
         console.log(error);
       }
       setLoading(false);
     };
+
     const unsubscribe = navigation.addListener("focus", fetchData);
     return unsubscribe;
   }, [patientId, navigation]);
+
+  const filteredShifts = selectedFilter
+    ? shifts.filter((s) => s.caregiverId === selectedFilter)
+    : shifts;
 
   if (loading)
     return (
@@ -76,6 +148,7 @@ const PatientDetailScreen = ({
 
   return (
     <View style={styles.container}>
+      {/* NAGŁÓWEK */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.editButton}
@@ -86,7 +159,6 @@ const PatientDetailScreen = ({
           <Text style={styles.editButtonText}>Edytuj</Text>
         </TouchableOpacity>
 
-        {/* ZDJĘCIE W NAGŁÓWKU */}
         <View style={styles.avatarContainer}>
           {patient.photoURL ? (
             <Image source={{ uri: patient.photoURL }} style={styles.avatar} />
@@ -124,9 +196,57 @@ const PatientDetailScreen = ({
           </TouchableOpacity>
         </View>
       </View>
-      <Text style={styles.historyTitle}>Historia Wizyt</Text>
+
+      {/* FILTRY */}
+      <View style={styles.filterSection}>
+        <Text style={styles.historyTitle}>Historia Wizyt</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterScroll}
+        >
+          <TouchableOpacity
+            style={[
+              styles.filterChip,
+              selectedFilter === null && styles.filterChipSelected,
+            ]}
+            onPress={() => setSelectedFilter(null)}
+          >
+            <Text
+              style={[
+                styles.filterText,
+                selectedFilter === null && styles.filterTextSelected,
+              ]}
+            >
+              Wszyscy
+            </Text>
+          </TouchableOpacity>
+
+          {caregiversList.map((cg) => (
+            <TouchableOpacity
+              key={cg.id}
+              style={[
+                styles.filterChip,
+                selectedFilter === cg.id && styles.filterChipSelected,
+              ]}
+              onPress={() => setSelectedFilter(cg.id)}
+            >
+              <Text
+                style={[
+                  styles.filterText,
+                  selectedFilter === cg.id && styles.filterTextSelected,
+                ]}
+              >
+                {cg.name || cg.email || "Nieznany"}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* LISTA */}
       <FlatList
-        data={shifts}
+        data={filteredShifts}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <TouchableOpacity
@@ -135,23 +255,33 @@ const PatientDetailScreen = ({
               navigation.navigate("ReportDetail", { shiftId: item.id })
             }
           >
-            <Text style={styles.cardTitle}>
-              {item.start.toDate().toLocaleDateString("pl-PL")}
-            </Text>
-            <Text style={styles.cardText}>
-              Godz:{" "}
-              {item.start
-                .toDate()
-                .toLocaleTimeString("pl-PL", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-            </Text>
+            <View>
+              <Text style={styles.cardTitle}>
+                {item.start.toDate().toLocaleDateString("pl-PL")}
+              </Text>
+              <Text style={styles.cardText}>
+                Godz:{" "}
+                {item.start
+                  .toDate()
+                  .toLocaleTimeString("pl-PL", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+              </Text>
+            </View>
+
+            <View style={styles.caregiverBadge}>
+              {/* ULEPSZONE WYŚWIETLANIE */}
+              <Text style={styles.caregiverText}>
+                👤 {caregiversMap[item.caregiverId] || "Brak danych"}
+              </Text>
+            </View>
           </TouchableOpacity>
         )}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>Brak historii.</Text>
+          <Text style={styles.emptyText}>Brak historii dla tego filtra.</Text>
         }
+        style={styles.list}
       />
     </View>
   );
@@ -167,7 +297,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#ddd",
     elevation: 3,
     alignItems: "center",
-  }, // AlignItems center wyśrodkuje zdjęcie
+  },
   editButton: {
     position: "absolute",
     top: 10,
@@ -178,8 +308,6 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   editButtonText: { color: theme.colors.primary, fontWeight: "600" },
-
-  // Style zdjęcia
   avatarContainer: { marginBottom: 10, marginTop: 20 },
   avatar: {
     width: 100,
@@ -196,7 +324,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   avatarText: { color: "white", fontSize: 40, fontWeight: "bold" },
-
   name: {
     fontSize: theme.fonts.title,
     fontWeight: "bold",
@@ -235,12 +362,34 @@ const styles = StyleSheet.create({
   },
   buttonPrimaryText: { color: theme.colors.primaryText, fontWeight: "bold" },
   buttonSecondaryText: { color: theme.colors.primary, fontWeight: "bold" },
+  filterSection: {
+    paddingVertical: 10,
+    backgroundColor: theme.colors.background,
+  },
   historyTitle: {
     fontSize: theme.fonts.subtitle,
     fontWeight: "bold",
     color: theme.colors.text,
-    padding: 20,
+    paddingHorizontal: 20,
+    marginBottom: 10,
   },
+  filterScroll: { paddingHorizontal: 20, paddingBottom: 10 },
+  filterChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1,
+    borderColor: theme.colors.textSecondary,
+    marginRight: 8,
+  },
+  filterChipSelected: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  filterText: { color: theme.colors.text, fontWeight: "500" },
+  filterTextSelected: { color: "white" },
+  list: { flex: 1 },
   shiftCard: {
     backgroundColor: theme.colors.card,
     padding: 15,
@@ -251,13 +400,22 @@ const styles = StyleSheet.create({
     borderColor: "#eee",
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
   },
   cardTitle: { fontWeight: "bold", color: theme.colors.text },
   cardText: { color: theme.colors.textSecondary },
+  caregiverBadge: {
+    backgroundColor: "#f0f0f0",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 5,
+  },
+  caregiverText: { fontSize: 12, color: theme.colors.text, fontWeight: "bold" },
   emptyText: {
     color: theme.colors.textSecondary,
     textAlign: "center",
     fontStyle: "italic",
+    marginTop: 20,
   },
 });
 

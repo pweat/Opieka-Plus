@@ -14,7 +14,9 @@ import {
   serverTimestamp,
   doc,
   getDoc,
-} from "firebase/firestore";
+  updateDoc,
+  arrayRemove,
+} from "firebase/firestore"; // <--- DODANO arrayRemove, updateDoc
 import { db } from "../../firebaseConfig";
 import { theme } from "../../theme";
 
@@ -29,30 +31,38 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
   const [loading, setLoading] = useState(true);
   const [caregivers, setCaregivers] = useState<CaregiverProfile[]>([]);
 
-  useEffect(() => {
-    const fetchAssignedCaregivers = async () => {
-      setLoading(true);
-      try {
-        const patientDoc = await getDoc(doc(db, "patients", patientId));
-        if (patientDoc.exists() && patientDoc.data().caregiverIds) {
-          const ids: string[] = patientDoc.data().caregiverIds;
-          const data = await Promise.all(
-            ids.map(async (id) => {
-              const u = await getDoc(doc(db, "users", id));
-              return u.exists()
-                ? ({ id: u.id, ...u.data() } as CaregiverProfile)
-                : null;
-            })
-          );
-          setCaregivers(data.filter((c) => c !== null) as CaregiverProfile[]);
-        } else {
-          setCaregivers([]);
-        }
-      } catch (error) {
-        Alert.alert("Błąd", "Nie udało się pobrać listy.");
+  // Funkcja pomocnicza do odświeżania listy (wyciągnięta z useEffect)
+  const fetchAssignedCaregivers = async () => {
+    setLoading(true);
+    try {
+      const patientDocRef = doc(db, "patients", patientId);
+      const patientDoc = await getDoc(patientDocRef);
+
+      if (patientDoc.exists() && patientDoc.data().caregiverIds) {
+        const caregiverIds: string[] = patientDoc.data().caregiverIds;
+        const caregiversData = await Promise.all(
+          caregiverIds.map(async (id) => {
+            const userDoc = await getDoc(doc(db, "users", id));
+            if (userDoc.exists()) {
+              return { id: userDoc.id, ...userDoc.data() } as CaregiverProfile;
+            }
+            return null;
+          })
+        );
+        setCaregivers(
+          caregiversData.filter((c) => c !== null) as CaregiverProfile[]
+        );
+      } else {
+        setCaregivers([]);
       }
-      setLoading(false);
-    };
+    } catch (error) {
+      console.error("Błąd pobierania: ", error);
+      Alert.alert("Błąd", "Nie udało się pobrać listy opiekunów.");
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
     fetchAssignedCaregivers();
   }, [patientId]);
 
@@ -60,25 +70,63 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     try {
       await addDoc(collection(db, "invitations"), {
-        code,
-        patientId,
+        code: code,
+        patientId: patientId,
         status: "pending",
         createdAt: serverTimestamp(),
       });
-      Alert.alert("Kod Zaproszenia", `Przekaż kod: ${code}`, [{ text: "OK" }]);
+      Alert.alert(
+        "Kod Zaproszenia",
+        `Przekaż ten kod opiekunowi: ${code}\n\nWażny jednorazowo.`,
+        [{ text: "OK" }]
+      );
     } catch (error) {
+      console.error("Błąd generowania kodu: ", error);
       Alert.alert("Błąd", "Nie udało się wygenerować kodu.");
     }
   };
 
-  if (loading)
-    return (
-      <ActivityIndicator
-        size="large"
-        color={theme.colors.primary}
-        style={styles.loader}
-      />
+  // === NOWA FUNKCJA: USUWANIE OPIEKUNA ===
+  const handleRemoveCaregiver = (
+    caregiverId: string,
+    caregiverName: string
+  ) => {
+    Alert.alert(
+      "Odebrać dostęp?",
+      `Czy na pewno chcesz odpiąć opiekuna ${caregiverName} od tego profilu?`,
+      [
+        { text: "Anuluj", style: "cancel" },
+        {
+          text: "Usuń",
+          style: "destructive", // Czerwony styl na iOS
+          onPress: async () => {
+            try {
+              const patientDocRef = doc(db, "patients", patientId);
+              // Magiczna funkcja arrayRemove usuwa konkretne ID z tablicy
+              await updateDoc(patientDocRef, {
+                caregiverIds: arrayRemove(caregiverId),
+              });
+
+              Alert.alert("Sukces", "Dostęp został odebrany.");
+              // Odśwież listę, aby usunięta osoba zniknęła
+              fetchAssignedCaregivers();
+            } catch (error) {
+              console.error("Błąd usuwania: ", error);
+              Alert.alert("Błąd", "Nie udało się usunąć opiekuna.");
+            }
+          },
+        },
+      ]
     );
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -86,21 +134,36 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
         style={styles.buttonPrimary}
         onPress={generateInviteCode}
       >
-        <Text style={styles.buttonText}>Zaproś nowego Opiekuna</Text>
+        <Text style={styles.buttonPrimaryText}>Zaproś nowego Opiekuna</Text>
       </TouchableOpacity>
+
       <Text style={styles.title}>Przypisani Opiekunowie:</Text>
+
       <FlatList
         data={caregivers}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>{item.name || item.email}</Text>
-            {item.name && <Text style={styles.cardSub}>{item.email}</Text>}
+            <View style={styles.cardInfo}>
+              <Text style={styles.cardTitle}>{item.name || "Bez imienia"}</Text>
+              <Text style={styles.cardSub}>{item.email}</Text>
+            </View>
+
+            {/* Przycisk usuwania */}
+            <TouchableOpacity
+              style={styles.removeButton}
+              onPress={() =>
+                handleRemoveCaregiver(item.id, item.name || item.email)
+              }
+            >
+              <Text style={styles.removeButtonText}>Usuń</Text>
+            </TouchableOpacity>
           </View>
         )}
         ListEmptyComponent={
-          <Text style={styles.empty}>Brak przypisanych opiekunów.</Text>
+          <Text style={styles.emptyText}>Brak przypisanych opiekunów.</Text>
         }
+        style={{ width: "100%" }}
       />
     </View>
   );
@@ -112,36 +175,73 @@ const styles = StyleSheet.create({
     padding: theme.spacing.large,
     backgroundColor: theme.colors.background,
   },
-  loader: { flex: 1 },
+  loadingContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
   buttonPrimary: {
     backgroundColor: theme.colors.primary,
-    padding: 15,
+    paddingVertical: theme.spacing.medium,
     borderRadius: 10,
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: theme.spacing.large,
     elevation: 3,
   },
-  buttonText: { color: "white", fontWeight: "bold" },
-  title: {
-    fontSize: 18,
+  buttonPrimaryText: {
+    color: theme.colors.primaryText,
+    fontSize: theme.fonts.body,
     fontWeight: "bold",
-    marginBottom: 10,
+  },
+  title: {
+    fontSize: theme.fonts.subtitle,
+    fontWeight: "bold",
+    marginBottom: theme.spacing.medium,
     color: theme.colors.text,
   },
+  // Zmieniony styl karty - teraz to rząd (row)
   card: {
-    backgroundColor: "white",
-    padding: 15,
+    backgroundColor: theme.colors.card,
+    padding: theme.spacing.medium,
     borderRadius: 10,
-    marginBottom: 10,
+    marginBottom: theme.spacing.medium,
     borderWidth: 1,
     borderColor: "#eee",
+    flexDirection: "row", // Układ poziomy
+    justifyContent: "space-between", // Rozsuń info i przycisk
+    alignItems: "center",
   },
-  cardTitle: { fontWeight: "bold", fontSize: 16, color: theme.colors.text },
-  cardSub: { color: theme.colors.textSecondary, marginTop: 2 },
-  empty: {
-    textAlign: "center",
+  cardInfo: {
+    flex: 1, // Zajmij dostępne miejsce
+  },
+  cardTitle: {
+    fontSize: theme.fonts.body,
+    color: theme.colors.text,
+    fontWeight: "bold",
+  },
+  cardSub: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    marginTop: 2,
+  },
+  // Styl czerwonego przycisku
+  removeButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#ffebee", // Jasnoczerwone tło
+    borderRadius: 6,
+    marginLeft: 10,
+    borderWidth: 1,
+    borderColor: "#ffcdd2",
+  },
+  removeButtonText: {
+    color: "#d32f2f", // Czerwony tekst
+    fontWeight: "bold",
+    fontSize: 12,
+  },
+  emptyText: {
     color: theme.colors.textSecondary,
     fontStyle: "italic",
+    textAlign: "center",
   },
 });
 

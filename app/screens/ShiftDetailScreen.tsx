@@ -15,100 +15,170 @@ import { db } from "../../firebaseConfig";
 import { theme } from "../../theme";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 
-const ShiftDetailScreen = ({ route }: { route: any }) => {
+interface Task {
+  description: string;
+  isDone: boolean;
+}
+interface ShiftDetails {
+  id: string;
+  patientName: string;
+  tasks: Task[];
+  mood?: "happy" | "neutral" | "sad";
+  energy?: "low" | "medium" | "high";
+  notes?: string;
+  status?: string; // Dodajemy status
+}
+
+const ShiftDetailScreen = ({
+  route,
+  navigation,
+}: {
+  route: any;
+  navigation: any;
+}) => {
+  // Dodajemy navigation
   const { shiftId } = route.params;
   const [loading, setLoading] = useState(true);
-  const [shift, setShift] = useState<any>(null);
+  const [shift, setShift] = useState<ShiftDetails | null>(null);
   const [notes, setNotes] = useState("");
-  const shiftRef = doc(db, "shifts", shiftId);
+  const shiftDocRef = doc(db, "shifts", shiftId);
 
   useEffect(() => {
-    const fetch = async () => {
-      const d = await getDoc(shiftRef);
-      if (d.exists()) {
-        setShift({ id: d.id, ...d.data() });
-        setNotes(d.data().notes || "");
+    const fetchShiftDetails = async () => {
+      setLoading(true);
+      try {
+        const shiftDoc = await getDoc(shiftDocRef);
+        if (shiftDoc.exists()) {
+          const data = shiftDoc.data();
+          setShift({
+            id: shiftDoc.id,
+            patientName: data.patientName,
+            tasks: data.tasks || [],
+            mood: data.mood,
+            energy: data.energy,
+            notes: data.notes,
+            status: data.status,
+          });
+          setNotes(data.notes || "");
+        } else {
+          Alert.alert("Błąd", "Nie można znaleźć tej wizyty.");
+        }
+      } catch (error) {
+        Alert.alert("Błąd", "Wystąpił problem z pobraniem danych.");
       }
       setLoading(false);
     };
-    fetch();
+    fetchShiftDetails();
   }, [shiftId]);
 
-  const toggleTask = async (idx: number) => {
-    const tasks = [...shift.tasks];
-    tasks[idx].isDone = !tasks[idx].isDone;
-    setShift({ ...shift, tasks });
-    await updateDoc(shiftRef, { tasks });
+  const handleToggleTask = async (taskIndex: number) => {
+    if (!shift) return;
+    const newTasks = [...shift.tasks];
+    newTasks[taskIndex].isDone = !newTasks[taskIndex].isDone;
+    setShift({ ...shift, tasks: newTasks });
+    try {
+      await updateDoc(shiftDocRef, { tasks: newTasks });
+    } catch (e) {}
   };
 
-  const updateField = async (field: string, val: string) => {
-    setShift({ ...shift, [field]: val });
-    await updateDoc(shiftRef, { [field]: val });
+  const handleUpdateReport = async (field: keyof ShiftDetails, value: any) => {
+    if (!shift) return;
+    setShift((prevShift) => ({ ...prevShift!, [field]: value }));
+    try {
+      await updateDoc(shiftDocRef, { [field]: value });
+    } catch (e) {}
   };
 
-  const saveNotes = async () => {
-    await updateDoc(shiftRef, { notes });
-    Alert.alert("Sukces", "Zapisano notatki.");
+  const handleSaveNotes = async () => {
+    try {
+      await updateDoc(shiftDocRef, { notes: notes });
+      Alert.alert("Sukces", "Notatki zostały zapisane.");
+    } catch (e) {
+      Alert.alert("Błąd", "Nie udało się zapisać notatek.");
+    }
   };
 
-  if (loading) return <ActivityIndicator size="large" style={{ flex: 1 }} />;
+  // === NOWA FUNKCJA: ZAKOŃCZ WIZYTĘ ===
+  const handleFinishShift = () => {
+    Alert.alert(
+      "Zakończyć wizytę?",
+      "Wizyta zniknie z Twojej listy zadań i zostanie przeniesiona do historii.",
+      [
+        { text: "Anuluj", style: "cancel" },
+        {
+          text: "Zakończ i Zamknij",
+          onPress: async () => {
+            try {
+              // Zmieniamy status na 'completed'
+              await updateDoc(shiftDocRef, { status: "completed" });
+              // Wracamy do ekranu głównego
+              navigation.goBack();
+            } catch (error) {
+              Alert.alert("Błąd", "Nie udało się zakończyć wizyty.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  if (loading)
+    return <ActivityIndicator size="large" style={styles.loadingContainer} />;
   if (!shift)
     return (
-      <View>
-        <Text>Błąd</Text>
+      <View style={styles.container}>
+        <Text>Błąd danych.</Text>
       </View>
     );
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={{ flex: 1 }}
+      style={styles.kbContainer}
     >
       <ScrollView
         style={styles.container}
-        contentContainerStyle={{ paddingBottom: 50 }}
+        contentContainerStyle={styles.scrollContainer}
+        keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.header}>{shift.patientName}</Text>
+        <Text style={styles.patientName}>{shift.patientName}</Text>
 
-        <Text style={styles.title}>Zadania:</Text>
-        {shift.tasks?.map((t: any, i: number) => (
-          <TouchableOpacity
-            key={i}
-            style={styles.task}
-            onPress={() => toggleTask(i)}
-          >
-            <Text
-              style={{
-                fontSize: 18,
-                marginRight: 10,
-                color: theme.colors.primary,
-              }}
+        <Text style={styles.title}>Zadania na dziś:</Text>
+        {shift.tasks.length > 0 ? (
+          shift.tasks.map((item, index) => (
+            <TouchableOpacity
+              key={index}
+              style={styles.taskCard}
+              onPress={() => handleToggleTask(index)}
             >
-              {t.isDone ? "☑" : "☐"}
-            </Text>
-            <Text
-              style={[
-                styles.taskText,
-                t.isDone && {
-                  textDecorationLine: "line-through",
-                  color: "gray",
-                },
-              ]}
-            >
-              {t.description}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <View
+                style={[styles.checkbox, item.isDone && styles.checkboxDone]}
+              >
+                {item.isDone && <Text style={styles.checkmark}>✔</Text>}
+              </View>
+              <Text
+                style={[styles.taskDescription, item.isDone && styles.taskDone]}
+              >
+                {item.description}
+              </Text>
+            </TouchableOpacity>
+          ))
+        ) : (
+          <Text style={styles.emptyText}>Brak zadań.</Text>
+        )}
 
         <Text style={styles.title}>Nastrój:</Text>
-        <View style={styles.row}>
+        <View style={styles.optionsContainer}>
           {["happy", "neutral", "sad"].map((m) => (
             <TouchableOpacity
               key={m}
-              style={[styles.option, shift.mood === m && styles.selected]}
-              onPress={() => updateField("mood", m)}
+              style={[
+                styles.moodButton,
+                shift.mood === m && styles.moodSelected,
+              ]}
+              onPress={() => handleUpdateReport("mood", m)}
             >
-              <Text style={{ fontSize: 30 }}>
+              <Text style={styles.moodEmoji}>
                 {m === "happy" ? "😄" : m === "neutral" ? "😐" : "😟"}
               </Text>
             </TouchableOpacity>
@@ -116,17 +186,20 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
         </View>
 
         <Text style={styles.title}>Energia:</Text>
-        <View style={styles.row}>
+        <View style={styles.optionsContainer}>
           {["low", "medium", "high"].map((e) => (
             <TouchableOpacity
               key={e}
-              style={[styles.option, shift.energy === e && styles.selected]}
-              onPress={() => updateField("energy", e)}
+              style={[
+                styles.optionButton,
+                shift.energy === e && styles.optionSelected,
+              ]}
+              onPress={() => handleUpdateReport("energy", e)}
             >
               <Text
                 style={[
-                  styles.optText,
-                  shift.energy === e && { color: "white" },
+                  styles.optionText,
+                  shift.energy === e && styles.optionSelectedText,
                 ]}
               >
                 {e === "low" ? "Mało" : e === "medium" ? "Średnio" : "Dużo"}
@@ -137,14 +210,28 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
 
         <Text style={styles.title}>Notatki:</Text>
         <TextInput
-          style={styles.input}
+          style={styles.notesInput}
+          placeholder="Wpisz notatki..."
           multiline
           value={notes}
           onChangeText={setNotes}
-          placeholder="Wpisz notatki..."
         />
-        <TouchableOpacity style={styles.btn} onPress={saveNotes}>
-          <Text style={styles.btnText}>Zapisz notatki</Text>
+        <TouchableOpacity
+          style={styles.buttonSecondary}
+          onPress={handleSaveNotes}
+        >
+          <Text style={styles.buttonSecondaryText}>Zapisz tylko notatki</Text>
+        </TouchableOpacity>
+
+        {/* ODSTĘP */}
+        <View style={{ height: 30 }} />
+
+        {/* === NOWY PRZYCISK ZAKOŃCZENIA === */}
+        <TouchableOpacity
+          style={styles.buttonFinish}
+          onPress={handleFinishShift}
+        >
+          <Text style={styles.buttonFinishText}>✅ ZAKOŃCZ WIZYTĘ</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -152,51 +239,111 @@ const ShiftDetailScreen = ({ route }: { route: any }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background, padding: 20 },
-  header: {
-    fontSize: 24,
+  kbContainer: { flex: 1, backgroundColor: theme.colors.background },
+  container: { flex: 1 },
+  scrollContainer: { padding: theme.spacing.large, paddingBottom: 50 },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: theme.colors.background,
+  },
+  patientName: {
+    fontSize: theme.fonts.title,
     fontWeight: "bold",
     textAlign: "center",
     marginBottom: 20,
+    color: theme.colors.text,
   },
-  title: { fontSize: 18, fontWeight: "bold", marginTop: 15, marginBottom: 5 },
-  task: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "white",
+  title: {
+    fontSize: theme.fonts.subtitle,
+    fontWeight: "bold",
+    marginTop: 15,
+    marginBottom: 10,
+    color: theme.colors.text,
+  },
+  taskCard: {
+    backgroundColor: theme.colors.card,
     padding: 15,
     borderRadius: 10,
-    marginBottom: 5,
+    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    elevation: 2,
   },
-  taskText: { fontSize: 16 },
-  row: { flexDirection: "row", justifyContent: "space-around" },
-  option: {
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: theme.colors.primary,
+    marginRight: 15,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxDone: { backgroundColor: theme.colors.primary },
+  checkmark: { color: "white", fontSize: 14 },
+  taskDescription: { fontSize: 16, color: theme.colors.text, flex: 1 },
+  taskDone: { textDecorationLine: "line-through", color: "gray" },
+  emptyText: { color: "gray", fontStyle: "italic", textAlign: "center" },
+  optionsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginBottom: 10,
+  },
+  moodButton: {
     padding: 10,
+    borderRadius: 50,
+    borderWidth: 2,
+    borderColor: "transparent",
+    backgroundColor: "white",
+  },
+  moodEmoji: { fontSize: 35 },
+  moodSelected: {
+    backgroundColor: "#e0e0e0",
+    borderColor: theme.colors.primary,
+  },
+  optionButton: {
+    flex: 1,
+    padding: 12,
+    marginHorizontal: 5,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: theme.colors.primary,
-    minWidth: 80,
+    backgroundColor: "white",
     alignItems: "center",
   },
-  selected: { backgroundColor: theme.colors.primary },
-  optText: { color: theme.colors.primary, fontWeight: "bold" },
-  input: {
+  optionSelected: { backgroundColor: theme.colors.primary },
+  optionText: { color: theme.colors.primary },
+  optionSelectedText: { color: "white", fontWeight: "bold" },
+  notesInput: {
     backgroundColor: "white",
-    height: 100,
     borderRadius: 10,
-    padding: 10,
-    textAlignVertical: "top",
     borderWidth: 1,
     borderColor: "#ddd",
-  },
-  btn: {
-    backgroundColor: theme.colors.primary,
     padding: 15,
+    minHeight: 100,
+    textAlignVertical: "top",
+    fontSize: 16,
+  },
+
+  // Button do notatek (teraz "drugorzędny")
+  buttonSecondary: { marginTop: 10, padding: 10, alignItems: "center" },
+  buttonSecondaryText: {
+    color: theme.colors.textSecondary,
+    textDecorationLine: "underline",
+  },
+
+  // Główny przycisk zakończenia
+  buttonFinish: {
+    backgroundColor: "#2e7d32",
+    padding: 18,
     borderRadius: 10,
     alignItems: "center",
-    marginTop: 10,
+    elevation: 4,
+    marginBottom: 20,
   },
-  btnText: { color: "white", fontWeight: "bold" },
+  buttonFinishText: { color: "white", fontSize: 18, fontWeight: "bold" },
 });
 
 export default ShiftDetailScreen;
