@@ -11,6 +11,7 @@ import {
   SafeAreaView,
   StatusBar,
   Platform,
+  Image,
 } from "react-native";
 import { auth, db } from "../../firebaseConfig";
 import { theme } from "../../theme";
@@ -29,16 +30,19 @@ import {
 } from "firebase/firestore";
 import { useIsFocused } from "@react-navigation/native";
 
+// Interfejsy
 interface UserProfile {
   uid: string;
   email: string;
   role: "opiekun_glowny" | "opiekun";
   name?: string;
 }
+// DODANO photoURL
 interface PatientProfile {
   id: string;
   name: string;
   description: string;
+  photoURL?: string;
 }
 interface Shift {
   id: string;
@@ -145,7 +149,6 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
         acceptedBy: user.uid,
       });
 
-      // Szybka aktualizacja stanu lokalnego
       setPatients((prev) => [
         ...prev,
         { id: patientId, name: patientDoc.data()?.name || "", description: "" },
@@ -161,13 +164,12 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
 
   const handleLogout = () => signOut(auth);
 
-  if (loading) {
+  if (loading)
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
-  }
 
   const renderCaregiverView = () => (
     <View style={styles.content}>
@@ -212,7 +214,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
         </>
       ) : (
         <>
-          <Text style={styles.title}>Witaj!</Text>
+          <Text style={styles.title}>Dołącz do profilu</Text>
           <Text style={styles.emptyText}>
             Nie masz jeszcze podopiecznych. Poproś o kod zaproszenia.
           </Text>
@@ -252,8 +254,24 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
               })
             }
           >
-            <Text style={styles.cardTitle}>{item.name}</Text>
-            <Text style={styles.cardText}>{item.description}</Text>
+            {/* ZDJĘCIE LUB ZAŚLEPKA */}
+            <View style={styles.cardHeader}>
+              {item.photoURL ? (
+                <Image source={{ uri: item.photoURL }} style={styles.avatar} />
+              ) : (
+                <View style={styles.avatarPlaceholder}>
+                  <Text style={styles.avatarText}>
+                    {item.name.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+              <View style={styles.cardInfo}>
+                <Text style={styles.cardTitle}>{item.name}</Text>
+                <Text style={styles.cardText} numberOfLines={1}>
+                  {item.description}
+                </Text>
+              </View>
+            </View>
           </TouchableOpacity>
         )}
         ListEmptyComponent={
@@ -274,11 +292,9 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
           <Text style={styles.logoutText}>Wyloguj</Text>
         </TouchableOpacity>
       </View>
-
       {userProfile?.role === "opiekun_glowny"
         ? renderOwnerView()
         : renderCaregiverView()}
-
       {userProfile?.role === "opiekun_glowny" && (
         <TouchableOpacity
           style={styles.fab}
@@ -311,8 +327,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#ddd",
     elevation: 3,
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
   },
   welcomeText: { color: theme.colors.textSecondary, fontSize: 14, flex: 1 },
   logoutText: {
@@ -339,6 +353,7 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.large,
     lineHeight: 22,
   },
+  // STYLE KARTY Z AWATAREM
   patientCard: {
     backgroundColor: theme.colors.card,
     padding: theme.spacing.medium,
@@ -346,6 +361,19 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.medium,
     elevation: 3,
   },
+  cardHeader: { flexDirection: "row", alignItems: "center" },
+  cardInfo: { flex: 1, marginLeft: theme.spacing.medium },
+  avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: "#eee" },
+  avatarPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: theme.colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarText: { color: "white", fontSize: 20, fontWeight: "bold" },
+
   shiftCard: {
     backgroundColor: "#e9f5ff",
     padding: theme.spacing.medium,
@@ -362,7 +390,7 @@ const styles = StyleSheet.create({
   cardText: {
     fontSize: theme.fonts.body,
     color: theme.colors.textSecondary,
-    marginTop: theme.spacing.small,
+    marginTop: 2,
   },
   input: {
     backgroundColor: theme.colors.card,

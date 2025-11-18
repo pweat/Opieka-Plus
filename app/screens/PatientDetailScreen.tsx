@@ -7,6 +7,7 @@ import {
   FlatList,
   TouchableOpacity,
   Alert,
+  Image,
 } from "react-native";
 import {
   doc,
@@ -27,7 +28,7 @@ const PatientDetailScreen = ({
   route: any;
   navigation: any;
 }) => {
-  const { patientId, patientName } = route.params;
+  const { patientId } = route.params;
   const [loading, setLoading] = useState(true);
   const [patient, setPatient] = useState<any>(null);
   const [shifts, setShifts] = useState<any[]>([]);
@@ -42,7 +43,6 @@ const PatientDetailScreen = ({
         } else {
           return Alert.alert("Błąd", "Nie znaleziono podopiecznego.");
         }
-
         const shiftsQuery = query(
           collection(db, "shifts"),
           where("patientId", "==", patientId),
@@ -53,7 +53,7 @@ const PatientDetailScreen = ({
           querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
         );
       } catch (error) {
-        console.log(error); // Ignorujemy błąd indeksu na starcie
+        console.log(error);
       }
       setLoading(false);
     };
@@ -85,8 +85,23 @@ const PatientDetailScreen = ({
         >
           <Text style={styles.editButtonText}>Edytuj</Text>
         </TouchableOpacity>
+
+        {/* ZDJĘCIE W NAGŁÓWKU */}
+        <View style={styles.avatarContainer}>
+          {patient.photoURL ? (
+            <Image source={{ uri: patient.photoURL }} style={styles.avatar} />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <Text style={styles.avatarText}>
+                {patient.name.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+        </View>
+
         <Text style={styles.name}>{patient.name}</Text>
         <Text style={styles.description}>{patient.description}</Text>
+
         <View style={styles.buttonRow}>
           <TouchableOpacity
             style={styles.buttonPrimary}
@@ -151,7 +166,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#ddd",
     elevation: 3,
-  },
+    alignItems: "center",
+  }, // AlignItems center wyśrodkuje zdjęcie
   editButton: {
     position: "absolute",
     top: 10,
@@ -159,14 +175,33 @@ const styles = StyleSheet.create({
     padding: 5,
     backgroundColor: theme.colors.background,
     borderRadius: 5,
+    zIndex: 10,
   },
   editButtonText: { color: theme.colors.primary, fontWeight: "600" },
+
+  // Style zdjęcia
+  avatarContainer: { marginBottom: 10, marginTop: 20 },
+  avatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "#eee",
+  },
+  avatarPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: theme.colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarText: { color: "white", fontSize: 40, fontWeight: "bold" },
+
   name: {
     fontSize: theme.fonts.title,
     fontWeight: "bold",
     marginBottom: 5,
     textAlign: "center",
-    marginTop: 15,
     color: theme.colors.text,
   },
   description: {
@@ -175,7 +210,11 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: "center",
   },
-  buttonRow: { flexDirection: "row", justifyContent: "space-between" },
+  buttonRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+  },
   buttonPrimary: {
     flex: 1,
     backgroundColor: theme.colors.primary,
