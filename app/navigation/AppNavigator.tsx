@@ -10,6 +10,7 @@ import ManageCaregiversScreen from "../screens/ManageCaregiversScreen";
 import ScheduleVisitScreen from "../screens/ScheduleVisitScreen";
 import ShiftDetailScreen from "../screens/ShiftDetailScreen";
 import ReportDetailScreen from "../screens/ReportDetailScreen";
+import EditVisitScreen from "../screens/EditVisitScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -55,6 +56,11 @@ const AppNavigator = () => {
         name="ReportDetail"
         component={ReportDetailScreen}
         options={{ title: "Raport z Wizyty" }}
+      />
+      <Stack.Screen
+        name="EditVisit"
+        component={EditVisitScreen}
+        options={{ title: "Edytuj wizytę" }}
       />
     </Stack.Navigator>
   );

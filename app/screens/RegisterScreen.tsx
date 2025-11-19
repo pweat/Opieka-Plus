@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   StyleSheet,
-  Alert,
   TouchableOpacity,
   SafeAreaView,
   ScrollView,
@@ -15,6 +14,8 @@ import { auth, db } from "../../firebaseConfig";
 import { theme } from "../../theme";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
+// 1. Importujemy hook
+import { useAlert } from "../context/AlertContext";
 
 const RegisterScreen = ({
   route,
@@ -29,9 +30,13 @@ const RegisterScreen = ({
   const [confirmPassword, setConfirmPassword] = useState("");
   const { selectedRole } = route.params;
 
+  // 2. Używamy hooka
+  const { showAlert } = useAlert();
+
   const handleRegister = async () => {
     if (!name || !email || !password || password !== confirmPassword) {
-      Alert.alert(
+      // 3. Podmieniamy alerty
+      showAlert(
         "Błąd",
         "Sprawdź, czy wszystkie pola są wypełnione i czy hasła są identyczne."
       );
@@ -53,9 +58,15 @@ const RegisterScreen = ({
         createdAt: new Date(),
       });
 
-      Alert.alert("Sukces!", "Konto zostało pomyślnie utworzone.");
+      showAlert("Sukces!", "Konto zostało pomyślnie utworzone.");
     } catch (error: any) {
-      Alert.alert("Błąd rejestracji", error.message);
+      if (error.code === "auth/email-already-in-use") {
+        showAlert("Błąd", "Ten adres email jest już zajęty.");
+      } else if (error.code === "auth/weak-password") {
+        showAlert("Błąd", "Hasło jest zbyt słabe (min. 6 znaków).");
+      } else {
+        showAlert("Błąd rejestracji", error.message);
+      }
     }
   };
 

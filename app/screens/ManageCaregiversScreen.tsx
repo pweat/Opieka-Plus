@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Alert,
   FlatList,
   ActivityIndicator,
   TouchableOpacity,
@@ -16,9 +15,10 @@ import {
   getDoc,
   updateDoc,
   arrayRemove,
-} from "firebase/firestore"; // <--- DODANO arrayRemove, updateDoc
+} from "firebase/firestore";
 import { db } from "../../firebaseConfig";
 import { theme } from "../../theme";
+import { useAlert } from "../context/AlertContext";
 
 interface CaregiverProfile {
   id: string;
@@ -31,7 +31,8 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
   const [loading, setLoading] = useState(true);
   const [caregivers, setCaregivers] = useState<CaregiverProfile[]>([]);
 
-  // Funkcja pomocnicza do odświeżania listy (wyciągnięta z useEffect)
+  const { showAlert } = useAlert();
+
   const fetchAssignedCaregivers = async () => {
     setLoading(true);
     try {
@@ -56,8 +57,7 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
         setCaregivers([]);
       }
     } catch (error) {
-      console.error("Błąd pobierania: ", error);
-      Alert.alert("Błąd", "Nie udało się pobrać listy opiekunów.");
+      showAlert("Błąd", "Nie udało się pobrać listy opiekunów.");
     }
     setLoading(false);
   };
@@ -75,44 +75,47 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
         status: "pending",
         createdAt: serverTimestamp(),
       });
-      Alert.alert(
+
+      showAlert(
         "Kod Zaproszenia",
-        `Przekaż ten kod opiekunowi: ${code}\n\nWażny jednorazowo.`,
-        [{ text: "OK" }]
+        `Przekaż ten kod opiekunowi:\n\n${code}\n\nWażny jednorazowo.`
       );
     } catch (error) {
-      console.error("Błąd generowania kodu: ", error);
-      Alert.alert("Błąd", "Nie udało się wygenerować kodu.");
+      showAlert("Błąd", "Nie udało się wygenerować kodu.");
     }
   };
 
-  // === NOWA FUNKCJA: USUWANIE OPIEKUNA ===
   const handleRemoveCaregiver = (
     caregiverId: string,
     caregiverName: string
   ) => {
-    Alert.alert(
+    showAlert(
       "Odebrać dostęp?",
       `Czy na pewno chcesz odpiąć opiekuna ${caregiverName} od tego profilu?`,
       [
         { text: "Anuluj", style: "cancel" },
         {
           text: "Usuń",
-          style: "destructive", // Czerwony styl na iOS
+          style: "destructive",
           onPress: async () => {
             try {
               const patientDocRef = doc(db, "patients", patientId);
-              // Magiczna funkcja arrayRemove usuwa konkretne ID z tablicy
               await updateDoc(patientDocRef, {
                 caregiverIds: arrayRemove(caregiverId),
               });
 
-              Alert.alert("Sukces", "Dostęp został odebrany.");
-              // Odśwież listę, aby usunięta osoba zniknęła
+              // Pokazujemy drugi alert sukcesu po usunięciu
+              // Używamy setTimeout, żeby alerty się nie nałożyły
+              setTimeout(() => {
+                showAlert("Sukces", "Dostęp został odebrany.");
+              }, 500);
+
               fetchAssignedCaregivers();
             } catch (error) {
               console.error("Błąd usuwania: ", error);
-              Alert.alert("Błąd", "Nie udało się usunąć opiekuna.");
+              setTimeout(() => {
+                showAlert("Błąd", "Nie udało się usunąć opiekuna.");
+              }, 500);
             }
           },
         },
@@ -149,7 +152,6 @@ const ManageCaregiversScreen = ({ route }: { route: any }) => {
               <Text style={styles.cardSub}>{item.email}</Text>
             </View>
 
-            {/* Przycisk usuwania */}
             <TouchableOpacity
               style={styles.removeButton}
               onPress={() =>
@@ -198,7 +200,6 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.medium,
     color: theme.colors.text,
   },
-  // Zmieniony styl karty - teraz to rząd (row)
   card: {
     backgroundColor: theme.colors.card,
     padding: theme.spacing.medium,
@@ -206,12 +207,12 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.medium,
     borderWidth: 1,
     borderColor: "#eee",
-    flexDirection: "row", // Układ poziomy
-    justifyContent: "space-between", // Rozsuń info i przycisk
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
   },
   cardInfo: {
-    flex: 1, // Zajmij dostępne miejsce
+    flex: 1,
   },
   cardTitle: {
     fontSize: theme.fonts.body,
@@ -223,18 +224,17 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     marginTop: 2,
   },
-  // Styl czerwonego przycisku
   removeButton: {
     paddingVertical: 8,
     paddingHorizontal: 12,
-    backgroundColor: "#ffebee", // Jasnoczerwone tło
+    backgroundColor: "#ffebee",
     borderRadius: 6,
     marginLeft: 10,
     borderWidth: 1,
     borderColor: "#ffcdd2",
   },
   removeButtonText: {
-    color: "#d32f2f", // Czerwony tekst
+    color: "#d32f2f",
     fontWeight: "bold",
     fontSize: 12,
   },

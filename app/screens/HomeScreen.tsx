@@ -7,7 +7,6 @@ import {
   FlatList,
   TouchableOpacity,
   TextInput,
-  Alert,
   SafeAreaView,
   StatusBar,
   Platform,
@@ -29,6 +28,8 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { useIsFocused } from "@react-navigation/native";
+// 1. Importujemy nasz hook
+import { useAlert } from "../context/AlertContext";
 
 interface UserProfile {
   uid: string;
@@ -42,7 +43,6 @@ interface PatientProfile {
   description: string;
   photoURL?: string;
 }
-// DODANO status do interfejsu Shift
 interface Shift {
   id: string;
   patientName: string;
@@ -58,6 +58,9 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [inviteCode, setInviteCode] = useState("");
   const isFocused = useIsFocused();
+
+  // 2. Inicjalizujemy alerty
+  const { showAlert } = useAlert();
 
   useEffect(() => {
     if (isFocused) fetchData();
@@ -104,12 +107,9 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
               (doc) => ({ id: doc.id, ...doc.data() } as Shift)
             );
 
-            // === FILTROWANIE ===
-            // Pokazujemy tylko te, które NIE są 'completed'
             const activeShifts = allShifts.filter(
               (s) => s.status !== "completed"
             );
-
             activeShifts.sort(
               (a, b) => a.start.toMillis() - b.start.toMillis()
             );
@@ -124,8 +124,9 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const handleJoinWithCode = async () => {
+    // 3. Podmieniamy Alert.alert na showAlert
     if (inviteCode.trim() === "")
-      return Alert.alert("Błąd", "Wpisz kod zaproszenia.");
+      return showAlert("Błąd", "Wpisz kod zaproszenia.");
     const user = auth.currentUser;
     if (!user) return;
     setLoading(true);
@@ -138,7 +139,10 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     const querySnapshot = await getDocs(q);
     if (querySnapshot.empty) {
       setLoading(false);
-      return Alert.alert("Błąd", "Nieprawidłowy lub zużyty kod.");
+      return showAlert(
+        "Błąd",
+        "Nieprawidłowy lub już wykorzystany kod zaproszenia."
+      );
     }
     try {
       const invitationDoc = querySnapshot.docs[0];
@@ -150,7 +154,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
         patientDoc.exists() &&
         patientDoc.data()?.caregiverIds?.includes(user.uid)
       ) {
-        Alert.alert("Info", "Już jesteś przypisany.");
+        showAlert("Informacja", "Jesteś już przypisany do tego podopiecznego.");
         await fetchData();
         return;
       }
@@ -164,12 +168,12 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
         ...prev,
         { id: patientId, name: patientDoc.data()?.name || "", description: "" },
       ]);
-      setShifts([]); // Po dołączeniu na pewno nie ma jeszcze wizyt
+      setShifts([]);
       setLoading(false);
-      Alert.alert("Sukces!", "Dołączyłeś do profilu.");
+      showAlert("Sukces!", "Dołączyłeś do profilu podopiecznego.");
     } catch (error) {
       setLoading(false);
-      Alert.alert("Błąd", "Wystąpił problem.");
+      showAlert("Błąd", "Wystąpił problem podczas dołączania.");
     }
   };
 
@@ -234,7 +238,8 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
         <>
           <Text style={styles.title}>Witaj!</Text>
           <Text style={styles.emptyText}>
-            Nie masz jeszcze podopiecznych. Poproś o kod zaproszenia.
+            Nie jesteś jeszcze przypisany do żadnego podopiecznego. Poproś
+            Opiekuna Głównego o 6-cyfrowy kod zaproszenia i wprowadź go poniżej.
           </Text>
           <TextInput
             style={styles.input}

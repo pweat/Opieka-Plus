@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   ScrollView,
   TouchableOpacity,
@@ -15,6 +14,8 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db } from "../../firebaseConfig";
 import { theme } from "../../theme";
 import { doc, getDoc, updateDoc, deleteDoc } from "firebase/firestore";
+// Import hooka
+import { useAlert } from "../context/AlertContext";
 
 const EditPatientScreen = ({
   route,
@@ -32,6 +33,7 @@ const EditPatientScreen = ({
   const [isUploading, setIsUploading] = useState(false);
 
   const patientDocRef = doc(db, "patients", patientId);
+  const { showAlert } = useAlert();
 
   useEffect(() => {
     const fetchPatientData = async () => {
@@ -44,11 +46,12 @@ const EditPatientScreen = ({
           setDescription(data.description);
           setImageUri(data.photoURL || null);
         } else {
-          Alert.alert("Błąd", "Nie znaleziono podopiecznego.");
-          navigation.goBack();
+          showAlert("Błąd", "Nie znaleziono podopiecznego.", [
+            { text: "OK", onPress: () => navigation.goBack() },
+          ]);
         }
       } catch (error) {
-        Alert.alert("Błąd", "Nie udało się pobrać danych.");
+        showAlert("Błąd", "Nie udało się pobrać danych.");
       }
       setLoading(false);
     };
@@ -57,7 +60,7 @@ const EditPatientScreen = ({
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"], // Poprawiony typ na string
+      mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.7,
@@ -84,21 +87,20 @@ const EditPatientScreen = ({
 
     const storageRef = ref(storage, `patients/${id}/profile_picture.jpg`);
     await uploadBytes(storageRef, blob);
-
-    // <--- POPRAWKA TUTAJ:
     (blob as any).close();
-
     return await getDownloadURL(storageRef);
   };
 
   const handleUpdateProfile = async () => {
-    if (!name.trim()) return Alert.alert("Błąd", "Imię nie może być puste.");
+    if (!name.trim()) {
+      showAlert("Błąd", "Imię nie może być puste.");
+      return;
+    }
 
     setIsUploading(true);
     let newPhotoURL = imageUri;
 
     try {
-      // Sprawdź, czy wybrano nowe zdjęcie (z lokalnego pliku)
       if (imageUri && imageUri.startsWith("file://")) {
         newPhotoURL = await uploadImageAndGetURL(imageUri, patientId);
       }
@@ -109,33 +111,40 @@ const EditPatientScreen = ({
         photoURL: newPhotoURL || "",
       });
 
-      Alert.alert("Sukces", "Profil zaktualizowany.");
-      navigation.goBack();
+      showAlert("Sukces", "Profil zaktualizowany.", [
+        { text: "OK", onPress: () => navigation.goBack() },
+      ]);
     } catch (error) {
       console.error("Błąd podczas aktualizacji: ", error);
-      Alert.alert("Błąd", "Wystąpił błąd podczas zapisu.");
+      showAlert("Błąd", "Wystąpił błąd podczas zapisu.");
     } finally {
       setIsUploading(false);
     }
   };
 
+  // === NOWY SPOSÓB POTWIERDZANIA USUWANIA ===
   const handleDeleteProfile = () => {
-    Alert.alert("Potwierdź usunięcie", `Usunąć profil ${name}?`, [
-      { text: "Anuluj", style: "cancel" },
-      {
-        text: "Usuń",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await deleteDoc(patientDocRef);
-            Alert.alert("Sukces", "Usunięto profil.");
-            navigation.navigate("Home");
-          } catch (error) {
-            Alert.alert("Błąd", "Nie udało się usunąć profilu.");
-          }
+    showAlert(
+      "Potwierdź usunięcie",
+      `Czy na pewno chcesz trwale usunąć profil ${name}? Tej akcji nie można cofnąć.`,
+      [
+        { text: "Anuluj", style: "cancel" },
+        {
+          text: "Usuń",
+          style: "destructive", // Nasz komponent wyświetli to na czerwono
+          onPress: async () => {
+            try {
+              await deleteDoc(patientDocRef);
+              // Używamy tu setTimeout lub po prostu nawigacji, bo alert i tak się zamknie
+              navigation.navigate("Home");
+              // Opcjonalnie można pokazać kolejny alert sukcesu, ale przejście do Home jest wystarczająco jasne
+            } catch (error) {
+              showAlert("Błąd", "Nie udało się usunąć profilu.");
+            }
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   if (loading) {
@@ -198,6 +207,7 @@ const EditPatientScreen = ({
   );
 };
 
+// Style (bez zmian)
 const styles = StyleSheet.create({
   container: {
     flex: 1,

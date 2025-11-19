@@ -1,15 +1,19 @@
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-// Ten plik stworzymy za chwilę
 import RootNavigator from "./app/navigation/RootNavigator";
+// Importujemy nasz nowy Provider
+import { AlertProvider } from "./app/context/AlertContext";
 
 export default function App() {
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
-        <RootNavigator />
-      </NavigationContainer>
+      {/* Owijamy wszystko w AlertProvider */}
+      <AlertProvider>
+        <NavigationContainer>
+          <RootNavigator />
+        </NavigationContainer>
+      </AlertProvider>
     </SafeAreaProvider>
   );
 }

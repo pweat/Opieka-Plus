@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   StyleSheet,
-  Alert,
   TouchableOpacity,
   SafeAreaView,
   KeyboardAvoidingView,
@@ -14,20 +13,33 @@ import {
 import { auth } from "../../firebaseConfig";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { theme } from "../../theme";
+// 1. Importujemy nasz hook
+import { useAlert } from "../context/AlertContext";
 
 const LoginScreen = ({ navigation }: { navigation: any }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  // 2. Pobieramy funkcję showAlert
+  const { showAlert } = useAlert();
+
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert("Błąd", "Proszę podać e-mail i hasło.");
+      // 3. Używamy nowej funkcji zamiast Alert.alert
+      showAlert("Błąd", "Proszę podać e-mail i hasło.");
       return;
     }
     try {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (error: any) {
-      Alert.alert("Błąd logowania", error.message);
+      if (
+        error.code === "auth/user-not-found" ||
+        error.code === "auth/wrong-password"
+      ) {
+        showAlert("Błąd logowania", "Nieprawidłowy e-mail lub hasło.");
+      } else {
+        showAlert("Błąd logowania", "Wystąpił nieoczekiwany błąd.");
+      }
     }
   };
 
@@ -37,7 +49,10 @@ const LoginScreen = ({ navigation }: { navigation: any }) => {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+        >
           <Text style={styles.title}>Zaloguj się</Text>
 
           <TextInput
@@ -78,10 +93,7 @@ const LoginScreen = ({ navigation }: { navigation: any }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   scrollContainer: {
     flexGrow: 1,
     justifyContent: "center",

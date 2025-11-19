@@ -4,11 +4,10 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
-  FlatList,
   TouchableOpacity,
-  Alert,
   Image,
-  ScrollView,
+  FlatList,
+  Alert,
 } from "react-native";
 import {
   doc,
@@ -22,6 +21,50 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
 import { theme } from "../../theme";
+import { Calendar, LocaleConfig } from "react-native-calendars";
+
+LocaleConfig.locales["pl"] = {
+  monthNames: [
+    "Styczeń",
+    "Luty",
+    "Marzec",
+    "Kwiecień",
+    "Maj",
+    "Czerwiec",
+    "Lipiec",
+    "Sierpień",
+    "Wrzesień",
+    "Październik",
+    "Listopad",
+    "Grudzień",
+  ],
+  monthNamesShort: [
+    "Sty.",
+    "Lut.",
+    "Mar.",
+    "Kwi.",
+    "Maj",
+    "Cze.",
+    "Lip.",
+    "Sie.",
+    "Wrz.",
+    "Paź.",
+    "Lis.",
+    "Gru.",
+  ],
+  dayNames: [
+    "Niedziela",
+    "Poniedziałek",
+    "Wtorek",
+    "Środa",
+    "Czwartek",
+    "Piątek",
+    "Sobota",
+  ],
+  dayNamesShort: ["Nd", "Pn", "Wt", "Śr", "Cz", "Pt", "So"],
+  today: "Dzisiaj",
+};
+LocaleConfig.defaultLocale = "pl";
 
 interface Shift {
   id: string;
@@ -29,8 +72,8 @@ interface Shift {
   caregiverId: string;
   start: Timestamp;
   status: string;
+  end?: Timestamp;
 }
-
 interface CaregiverInfo {
   id: string;
   name: string;
@@ -47,29 +90,27 @@ const PatientDetailScreen = ({
   const { patientId } = route.params;
   const [loading, setLoading] = useState(true);
   const [patient, setPatient] = useState<any>(null);
-  const [shifts, setShifts] = useState<Shift[]>([]);
-
   const [caregiversMap, setCaregiversMap] = useState<{ [key: string]: string }>(
     {}
   );
-  const [caregiversList, setCaregiversList] = useState<CaregiverInfo[]>([]);
-  const [selectedFilter, setSelectedFilter] = useState<string | null>(null);
+  const [allShifts, setAllShifts] = useState<Shift[]>([]);
+  const [selectedDate, setSelectedDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // 1. Dane pacjenta
         const patientDoc = await getDoc(doc(db, "patients", patientId));
         if (!patientDoc.exists()) {
           Alert.alert("Błąd", "Nie znaleziono podopiecznego.");
-          setLoading(false);
+          navigation.goBack();
           return;
         }
         const pData = patientDoc.data();
         setPatient({ id: patientDoc.id, ...pData });
 
-        // 2. Historia wizyt
         const shiftsQuery = query(
           collection(db, "shifts"),
           where("patientId", "==", patientId),
@@ -79,46 +120,29 @@ const PatientDetailScreen = ({
         const shiftsData = querySnapshot.docs.map(
           (doc) => ({ id: doc.id, ...doc.data() } as Shift)
         );
-        setShifts(shiftsData);
+        setAllShifts(shiftsData);
 
-        // 3. Zbieranie ID opiekunów
-        const uniqueCaregiverIds = new Set<string>();
+        const uniqueIds = new Set<string>();
         shiftsData.forEach((s) => {
-          if (s.caregiverId) uniqueCaregiverIds.add(s.caregiverId);
+          if (s.caregiverId) uniqueIds.add(s.caregiverId);
         });
         if (pData.caregiverIds) {
-          pData.caregiverIds.forEach((id: string) =>
-            uniqueCaregiverIds.add(id)
-          );
+          pData.caregiverIds.forEach((id: string) => uniqueIds.add(id));
         }
 
-        // 4. Pobieranie danych ORAZ obsługa błędów (brakujących userów)
         const caregiversData = await Promise.all(
-          Array.from(uniqueCaregiverIds).map(async (id) => {
+          Array.from(uniqueIds).map(async (id) => {
             const u = await getDoc(doc(db, "users", id));
-            if (u.exists()) {
-              return { id: u.id, ...u.data() } as CaregiverInfo;
-            } else {
-              // Jeśli user nie istnieje (został usunięty z bazy), zwracamy "zaślepkę"
-              // To naprawi problem pustego pola dla "Kociołka" jeśli jego konto zniknęło
-              return {
-                id: id,
-                name: "Usunięty/Nieznany",
-                email: "",
-              } as CaregiverInfo;
-            }
+            return u.exists()
+              ? ({ id: u.id, ...u.data() } as CaregiverInfo)
+              : { id, name: "Usunięty", email: "" };
           })
         );
-
-        const validCaregivers = caregiversData; // Teraz bierzemy wszystkich, nawet tych "Usuniętych"
-
-        // 5. Budowanie mapy
         const map: { [key: string]: string } = {};
-        validCaregivers.forEach((c) => {
-          map[c.id] = c.name || c.email || "Bez nazwy";
-        });
+        caregiversData.forEach(
+          (c) => (map[c.id] = c.name || c.email || "Bez nazwy")
+        );
         setCaregiversMap(map);
-        setCaregiversList(validCaregivers);
       } catch (error) {
         console.log(error);
       }
@@ -129,9 +153,21 @@ const PatientDetailScreen = ({
     return unsubscribe;
   }, [patientId, navigation]);
 
-  const filteredShifts = selectedFilter
-    ? shifts.filter((s) => s.caregiverId === selectedFilter)
-    : shifts;
+  const markedDates: any = {};
+  allShifts.forEach((shift) => {
+    const dateKey = shift.start.toDate().toISOString().split("T")[0];
+    markedDates[dateKey] = { marked: true, dotColor: theme.colors.primary };
+  });
+  markedDates[selectedDate] = {
+    ...markedDates[selectedDate],
+    selected: true,
+    selectedColor: theme.colors.primary,
+  };
+
+  const selectedDateShifts = allShifts.filter((shift) => {
+    return shift.start.toDate().toISOString().split("T")[0] === selectedDate;
+  });
+  selectedDateShifts.sort((a, b) => a.start.toMillis() - b.start.toMillis());
 
   if (loading)
     return (
@@ -146,9 +182,8 @@ const PatientDetailScreen = ({
       </View>
     );
 
-  return (
-    <View style={styles.container}>
-      {/* NAGŁÓWEK */}
+  const ListHeader = () => (
+    <View style={styles.headerContainer}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.editButton}
@@ -158,7 +193,6 @@ const PatientDetailScreen = ({
         >
           <Text style={styles.editButtonText}>Edytuj</Text>
         </TouchableOpacity>
-
         <View style={styles.avatarContainer}>
           {patient.photoURL ? (
             <Image source={{ uri: patient.photoURL }} style={styles.avatar} />
@@ -170,11 +204,11 @@ const PatientDetailScreen = ({
             </View>
           )}
         </View>
-
         <Text style={styles.name}>{patient.name}</Text>
         <Text style={styles.description}>{patient.description}</Text>
 
         <View style={styles.buttonRow}>
+          {/* PRZYCISK 1: Zaplanuj Wizytę (STYL PRIMARY) */}
           <TouchableOpacity
             style={styles.buttonPrimary}
             onPress={() =>
@@ -186,102 +220,86 @@ const PatientDetailScreen = ({
           >
             <Text style={styles.buttonPrimaryText}>Zaplanuj Wizytę</Text>
           </TouchableOpacity>
+
+          {/* PRZYCISK 2: Opiekunowie (TERAZ TEŻ STYL PRIMARY) */}
           <TouchableOpacity
-            style={styles.buttonSecondary}
+            style={styles.buttonPrimary}
             onPress={() =>
               navigation.navigate("ManageCaregivers", { patientId: patient.id })
             }
           >
-            <Text style={styles.buttonSecondaryText}>Opiekunowie</Text>
+            <Text style={styles.buttonPrimaryText}>Opiekunowie</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* FILTRY */}
-      <View style={styles.filterSection}>
-        <Text style={styles.historyTitle}>Historia Wizyt</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterScroll}
-        >
-          <TouchableOpacity
-            style={[
-              styles.filterChip,
-              selectedFilter === null && styles.filterChipSelected,
-            ]}
-            onPress={() => setSelectedFilter(null)}
-          >
-            <Text
-              style={[
-                styles.filterText,
-                selectedFilter === null && styles.filterTextSelected,
-              ]}
-            >
-              Wszyscy
-            </Text>
-          </TouchableOpacity>
+      <Calendar
+        current={selectedDate}
+        onDayPress={(day: any) => setSelectedDate(day.dateString)}
+        markedDates={markedDates}
+        theme={{
+          todayTextColor: theme.colors.primary,
+          arrowColor: theme.colors.primary,
+          dotColor: theme.colors.primary,
+          selectedDayBackgroundColor: theme.colors.primary,
+        }}
+      />
+      <Text style={styles.dateHeader}>Wizyty w dniu: {selectedDate}</Text>
+    </View>
+  );
 
-          {caregiversList.map((cg) => (
-            <TouchableOpacity
-              key={cg.id}
-              style={[
-                styles.filterChip,
-                selectedFilter === cg.id && styles.filterChipSelected,
-              ]}
-              onPress={() => setSelectedFilter(cg.id)}
-            >
-              <Text
-                style={[
-                  styles.filterText,
-                  selectedFilter === cg.id && styles.filterTextSelected,
-                ]}
-              >
-                {cg.name || cg.email || "Nieznany"}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* LISTA */}
+  return (
+    <View style={styles.container}>
       <FlatList
-        data={filteredShifts}
+        data={selectedDateShifts}
         keyExtractor={(item) => item.id}
+        ListHeaderComponent={ListHeader}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.shiftCard}
-            onPress={() =>
-              navigation.navigate("ReportDetail", { shiftId: item.id })
-            }
+            onPress={() => {
+              if (item.status === "completed") {
+                navigation.navigate("ReportDetail", { shiftId: item.id });
+              } else {
+                navigation.navigate("EditVisit", { shiftId: item.id });
+              }
+            }}
           >
             <View>
               <Text style={styles.cardTitle}>
-                {item.start.toDate().toLocaleDateString("pl-PL")}
-              </Text>
-              <Text style={styles.cardText}>
-                Godz:{" "}
                 {item.start
                   .toDate()
                   .toLocaleTimeString("pl-PL", {
                     hour: "2-digit",
                     minute: "2-digit",
                   })}
+                -
+                {item.end
+                  ? item.end
+                      .toDate()
+                      .toLocaleTimeString("pl-PL", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                  : ""}
+              </Text>
+              <Text style={styles.statusText}>
+                {item.status === "completed"
+                  ? "✅ Zakończona"
+                  : "🟡 Zaplanowana"}
               </Text>
             </View>
-
             <View style={styles.caregiverBadge}>
-              {/* ULEPSZONE WYŚWIETLANIE */}
               <Text style={styles.caregiverText}>
-                👤 {caregiversMap[item.caregiverId] || "Brak danych"}
+                👤 {caregiversMap[item.caregiverId] || "Nieznany"}
               </Text>
             </View>
           </TouchableOpacity>
         )}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>Brak historii dla tego filtra.</Text>
+          <Text style={styles.emptyText}>Brak wizyt w wybranym dniu.</Text>
         }
-        style={styles.list}
+        contentContainerStyle={{ paddingBottom: 50 }}
       />
     </View>
   );
@@ -290,13 +308,14 @@ const PatientDetailScreen = ({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   center: { justifyContent: "center", alignItems: "center" },
+  headerContainer: { marginBottom: 10 },
   header: {
     padding: theme.spacing.large,
+    paddingBottom: 5,
     backgroundColor: theme.colors.card,
-    borderBottomWidth: 1,
-    borderBottomColor: "#ddd",
     elevation: 3,
     alignItems: "center",
+    marginBottom: 15,
   },
   editButton: {
     position: "absolute",
@@ -308,40 +327,38 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   editButtonText: { color: theme.colors.primary, fontWeight: "600" },
-  avatarContainer: { marginBottom: 10, marginTop: 20 },
-  avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: "#eee",
-  },
+  avatarContainer: { marginBottom: 10, marginTop: 5 },
+  avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: "#eee" },
   avatarPlaceholder: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: theme.colors.primary,
     justifyContent: "center",
     alignItems: "center",
   },
-  avatarText: { color: "white", fontSize: 40, fontWeight: "bold" },
+  avatarText: { color: "white", fontSize: 30, fontWeight: "bold" },
   name: {
-    fontSize: theme.fonts.title,
+    fontSize: 22,
     fontWeight: "bold",
-    marginBottom: 5,
+    marginBottom: 2,
     textAlign: "center",
     color: theme.colors.text,
   },
   description: {
-    fontSize: theme.fonts.body,
+    fontSize: 14,
     color: theme.colors.textSecondary,
-    marginBottom: 20,
+    marginBottom: 15,
     textAlign: "center",
   },
   buttonRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     width: "100%",
+    marginBottom: 10,
   },
+
+  // STYL GŁÓWNEGO PRZYCISKU (Teraz używany przez oba)
   buttonPrimary: {
     flex: 1,
     backgroundColor: theme.colors.primary,
@@ -350,50 +367,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginHorizontal: 5,
   },
-  buttonSecondary: {
-    flex: 1,
-    backgroundColor: theme.colors.card,
-    borderWidth: 1,
-    borderColor: theme.colors.primary,
-    padding: 10,
-    borderRadius: 10,
-    alignItems: "center",
-    marginHorizontal: 5,
+  buttonPrimaryText: {
+    color: theme.colors.primaryText,
+    fontWeight: "bold",
+    fontSize: 12,
   },
-  buttonPrimaryText: { color: theme.colors.primaryText, fontWeight: "bold" },
-  buttonSecondaryText: { color: theme.colors.primary, fontWeight: "bold" },
-  filterSection: {
-    paddingVertical: 10,
-    backgroundColor: theme.colors.background,
-  },
-  historyTitle: {
-    fontSize: theme.fonts.subtitle,
+
+  dateHeader: {
+    fontSize: 16,
     fontWeight: "bold",
     color: theme.colors.text,
-    paddingHorizontal: 20,
-    marginBottom: 10,
+    padding: 15,
+    backgroundColor: "#f0f0f0",
+    marginTop: 10,
   },
-  filterScroll: { paddingHorizontal: 20, paddingBottom: 10 },
-  filterChip: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    backgroundColor: theme.colors.card,
-    borderWidth: 1,
-    borderColor: theme.colors.textSecondary,
-    marginRight: 8,
-  },
-  filterChipSelected: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  filterText: { color: theme.colors.text, fontWeight: "500" },
-  filterTextSelected: { color: "white" },
-  list: { flex: 1 },
   shiftCard: {
     backgroundColor: theme.colors.card,
     padding: 15,
-    marginHorizontal: 20,
+    marginHorizontal: 15,
     marginBottom: 10,
     borderRadius: 10,
     borderWidth: 1,
@@ -401,9 +392,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    elevation: 1,
   },
-  cardTitle: { fontWeight: "bold", color: theme.colors.text },
-  cardText: { color: theme.colors.textSecondary },
+  cardTitle: { fontWeight: "bold", fontSize: 16, color: theme.colors.text },
+  statusText: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 },
   caregiverBadge: {
     backgroundColor: "#f0f0f0",
     paddingVertical: 4,

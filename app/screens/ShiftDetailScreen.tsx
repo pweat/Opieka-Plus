@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   TouchableOpacity,
   ScrollView,
   TextInput,
@@ -14,6 +13,8 @@ import {
 import { db } from "../../firebaseConfig";
 import { theme } from "../../theme";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
+// 1. Importujemy hook do alertów
+import { useAlert } from "../context/AlertContext";
 
 interface Task {
   description: string;
@@ -26,7 +27,7 @@ interface ShiftDetails {
   mood?: "happy" | "neutral" | "sad";
   energy?: "low" | "medium" | "high";
   notes?: string;
-  status?: string; // Dodajemy status
+  status?: string;
 }
 
 const ShiftDetailScreen = ({
@@ -36,11 +37,14 @@ const ShiftDetailScreen = ({
   route: any;
   navigation: any;
 }) => {
-  // Dodajemy navigation
   const { shiftId } = route.params;
   const [loading, setLoading] = useState(true);
   const [shift, setShift] = useState<ShiftDetails | null>(null);
   const [notes, setNotes] = useState("");
+
+  // 2. Inicjalizujemy hook
+  const { showAlert } = useAlert();
+
   const shiftDocRef = doc(db, "shifts", shiftId);
 
   useEffect(() => {
@@ -61,10 +65,12 @@ const ShiftDetailScreen = ({
           });
           setNotes(data.notes || "");
         } else {
-          Alert.alert("Błąd", "Nie można znaleźć tej wizyty.");
+          showAlert("Błąd", "Nie można znaleźć tej wizyty.", [
+            { text: "OK", onPress: () => navigation.goBack() },
+          ]);
         }
       } catch (error) {
-        Alert.alert("Błąd", "Wystąpił problem z pobraniem danych.");
+        showAlert("Błąd", "Wystąpił problem z pobraniem danych.");
       }
       setLoading(false);
     };
@@ -78,7 +84,11 @@ const ShiftDetailScreen = ({
     setShift({ ...shift, tasks: newTasks });
     try {
       await updateDoc(shiftDocRef, { tasks: newTasks });
-    } catch (e) {}
+    } catch (e) {
+      // Cicha porażka lub alert, tutaj można pominąć dla płynności,
+      // ale w razie błędu sieciowego warto poinformować
+      // showAlert("Błąd", "Nie udało się zapisać zmiany.");
+    }
   };
 
   const handleUpdateReport = async (field: keyof ShiftDetails, value: any) => {
@@ -86,21 +96,23 @@ const ShiftDetailScreen = ({
     setShift((prevShift) => ({ ...prevShift!, [field]: value }));
     try {
       await updateDoc(shiftDocRef, { [field]: value });
-    } catch (e) {}
+    } catch (e) {
+      showAlert("Błąd", "Nie udało się zapisać zmian.");
+    }
   };
 
   const handleSaveNotes = async () => {
     try {
       await updateDoc(shiftDocRef, { notes: notes });
-      Alert.alert("Sukces", "Notatki zostały zapisane.");
+      showAlert("Sukces", "Notatki zostały zapisane.");
     } catch (e) {
-      Alert.alert("Błąd", "Nie udało się zapisać notatek.");
+      showAlert("Błąd", "Nie udało się zapisać notatek.");
     }
   };
 
-  // === NOWA FUNKCJA: ZAKOŃCZ WIZYTĘ ===
   const handleFinishShift = () => {
-    Alert.alert(
+    // 3. Używamy naszego ładnego alertu z potwierdzeniem
+    showAlert(
       "Zakończyć wizytę?",
       "Wizyta zniknie z Twojej listy zadań i zostanie przeniesiona do historii.",
       [
@@ -109,12 +121,10 @@ const ShiftDetailScreen = ({
           text: "Zakończ i Zamknij",
           onPress: async () => {
             try {
-              // Zmieniamy status na 'completed'
               await updateDoc(shiftDocRef, { status: "completed" });
-              // Wracamy do ekranu głównego
               navigation.goBack();
             } catch (error) {
-              Alert.alert("Błąd", "Nie udało się zakończyć wizyty.");
+              showAlert("Błąd", "Nie udało się zakończyć wizyty.");
             }
           },
         },
@@ -123,7 +133,13 @@ const ShiftDetailScreen = ({
   };
 
   if (loading)
-    return <ActivityIndicator size="large" style={styles.loadingContainer} />;
+    return (
+      <ActivityIndicator
+        size="large"
+        style={styles.loadingContainer}
+        color={theme.colors.primary}
+      />
+    );
   if (!shift)
     return (
       <View style={styles.container}>
@@ -156,6 +172,7 @@ const ShiftDetailScreen = ({
               >
                 {item.isDone && <Text style={styles.checkmark}>✔</Text>}
               </View>
+              {/* BEZ PRZEKREŚLENIA */}
               <Text
                 style={[styles.taskDescription, item.isDone && styles.taskDone]}
               >
@@ -212,6 +229,7 @@ const ShiftDetailScreen = ({
         <TextInput
           style={styles.notesInput}
           placeholder="Wpisz notatki..."
+          placeholderTextColor={theme.colors.textSecondary}
           multiline
           value={notes}
           onChangeText={setNotes}
@@ -223,10 +241,7 @@ const ShiftDetailScreen = ({
           <Text style={styles.buttonSecondaryText}>Zapisz tylko notatki</Text>
         </TouchableOpacity>
 
-        {/* ODSTĘP */}
         <View style={{ height: 30 }} />
-
-        {/* === NOWY PRZYCISK ZAKOŃCZENIA === */}
         <TouchableOpacity
           style={styles.buttonFinish}
           onPress={handleFinishShift}
@@ -284,7 +299,9 @@ const styles = StyleSheet.create({
   checkboxDone: { backgroundColor: theme.colors.primary },
   checkmark: { color: "white", fontSize: 14 },
   taskDescription: { fontSize: 16, color: theme.colors.text, flex: 1 },
-  taskDone: { textDecorationLine: "line-through", color: "gray" },
+  taskDone: {
+    color: theme.colors.textSecondary, // Tylko kolor szary, brak przekreślenia
+  },
   emptyText: { color: "gray", fontStyle: "italic", textAlign: "center" },
   optionsContainer: {
     flexDirection: "row",
@@ -325,16 +342,13 @@ const styles = StyleSheet.create({
     minHeight: 100,
     textAlignVertical: "top",
     fontSize: 16,
+    color: theme.colors.text,
   },
-
-  // Button do notatek (teraz "drugorzędny")
   buttonSecondary: { marginTop: 10, padding: 10, alignItems: "center" },
   buttonSecondaryText: {
     color: theme.colors.textSecondary,
     textDecorationLine: "underline",
   },
-
-  // Główny przycisk zakończenia
   buttonFinish: {
     backgroundColor: "#2e7d32",
     padding: 18,

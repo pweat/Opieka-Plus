@@ -4,19 +4,19 @@ import {
   Text,
   TextInput,
   StyleSheet,
-  Alert,
   SafeAreaView,
   TouchableOpacity,
   Image,
   ActivityIndicator,
-  ScrollView, // <--- DODANO ScrollView
+  ScrollView,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { db, auth } from "../../firebaseConfig";
 import { theme } from "../../theme";
-// <--- DODANO doc, updateDoc
 import { collection, addDoc, doc, updateDoc } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+// Import hooka
+import { useAlert } from "../context/AlertContext";
 
 const AddPatientScreen = ({ navigation }: { navigation: any }) => {
   const [name, setName] = useState("");
@@ -24,9 +24,12 @@ const AddPatientScreen = ({ navigation }: { navigation: any }) => {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
+  // Użycie hooka
+  const { showAlert } = useAlert();
+
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"], // Używamy stringa zamiast enum dla prostoty (lub ImagePicker.MediaTypeOptions.Images)
+      mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.7,
@@ -59,7 +62,6 @@ const AddPatientScreen = ({ navigation }: { navigation: any }) => {
     );
     const snapshot = await uploadBytes(storageRef, blob);
 
-    // <--- POPRAWKA: Rzutowanie na 'any', aby TypeScript nie krzyczał o metodę close()
     (blob as any).close();
 
     const url = await getDownloadURL(snapshot.ref);
@@ -67,7 +69,10 @@ const AddPatientScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const handleSaveProfile = async () => {
-    if (name.trim() === "") return Alert.alert("Błąd", "Podaj imię.");
+    if (name.trim() === "") {
+      showAlert("Błąd", "Proszę podać imię podopiecznego.");
+      return;
+    }
     const user = auth.currentUser;
     if (!user) return;
 
@@ -87,11 +92,13 @@ const AddPatientScreen = ({ navigation }: { navigation: any }) => {
         await updateDoc(doc(db, "patients", docRef.id), { photoURL });
       }
 
-      Alert.alert("Sukces", "Profil podopiecznego został pomyślnie dodany.");
-      navigation.goBack();
+      // Sukces - tutaj ważna zmiana w onPress (callback)
+      showAlert("Sukces", "Profil podopiecznego został pomyślnie dodany.", [
+        { text: "OK", onPress: () => navigation.goBack() },
+      ]);
     } catch (error) {
       console.error("Błąd podczas zapisu: ", error);
-      Alert.alert("Błąd", "Wystąpił błąd podczas zapisu profilu.");
+      showAlert("Błąd", "Wystąpił błąd podczas zapisu profilu.");
     } finally {
       setIsUploading(false);
     }
