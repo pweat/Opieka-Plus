@@ -7,10 +7,13 @@ import {
   FlatList,
   TouchableOpacity,
   TextInput,
+  Alert,
   SafeAreaView,
   StatusBar,
   Platform,
   Image,
+  Modal,
+  KeyboardAvoidingView,
 } from "react-native";
 import { auth, db } from "../../firebaseConfig";
 import { theme } from "../../theme";
@@ -28,8 +31,51 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { useIsFocused } from "@react-navigation/native";
-// 1. Importujemy nasz hook
+import { Calendar, LocaleConfig } from "react-native-calendars";
 import { useAlert } from "../context/AlertContext";
+
+LocaleConfig.locales["pl"] = {
+  monthNames: [
+    "Styczeń",
+    "Luty",
+    "Marzec",
+    "Kwiecień",
+    "Maj",
+    "Czerwiec",
+    "Lipiec",
+    "Sierpień",
+    "Wrzesień",
+    "Październik",
+    "Listopad",
+    "Grudzień",
+  ],
+  monthNamesShort: [
+    "Sty.",
+    "Lut.",
+    "Mar.",
+    "Kwi.",
+    "Maj",
+    "Cze.",
+    "Lip.",
+    "Sie.",
+    "Wrz.",
+    "Paź.",
+    "Lis.",
+    "Gru.",
+  ],
+  dayNames: [
+    "Niedziela",
+    "Poniedziałek",
+    "Wtorek",
+    "Środa",
+    "Czwartek",
+    "Piątek",
+    "Sobota",
+  ],
+  dayNamesShort: ["Nd", "Pn", "Wt", "Śr", "Cz", "Pt", "So"],
+  today: "Dzisiaj",
+};
+LocaleConfig.defaultLocale = "pl";
 
 interface UserProfile {
   uid: string;
@@ -56,14 +102,21 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [patients, setPatients] = useState<PatientProfile[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
-  const [inviteCode, setInviteCode] = useState("");
-  const isFocused = useIsFocused();
 
-  // 2. Inicjalizujemy alerty
+  const [selectedDate, setSelectedDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
+  const [isJoinModalVisible, setJoinModalVisible] = useState(false);
+  const [inviteCode, setInviteCode] = useState("");
+
+  const isFocused = useIsFocused();
   const { showAlert } = useAlert();
+  const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
     if (isFocused) fetchData();
+    const interval = setInterval(() => setCurrentTime(new Date()), 60000);
+    return () => clearInterval(interval);
   }, [isFocused]);
 
   const fetchData = async () => {
@@ -124,7 +177,6 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const handleJoinWithCode = async () => {
-    // 3. Podmieniamy Alert.alert na showAlert
     if (inviteCode.trim() === "")
       return showAlert("Błąd", "Wpisz kod zaproszenia.");
     const user = auth.currentUser;
@@ -139,10 +191,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     const querySnapshot = await getDocs(q);
     if (querySnapshot.empty) {
       setLoading(false);
-      return showAlert(
-        "Błąd",
-        "Nieprawidłowy lub już wykorzystany kod zaproszenia."
-      );
+      return showAlert("Błąd", "Nieprawidłowy lub zużyty kod.");
     }
     try {
       const invitationDoc = querySnapshot.docs[0];
@@ -154,8 +203,9 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
         patientDoc.exists() &&
         patientDoc.data()?.caregiverIds?.includes(user.uid)
       ) {
-        showAlert("Informacja", "Jesteś już przypisany do tego podopiecznego.");
+        showAlert("Informacja", "Już jesteś przypisany.");
         await fetchData();
+        setJoinModalVisible(false);
         return;
       }
       await updateDoc(patientDocRef, { caregiverIds: arrayUnion(user.uid) });
@@ -168,98 +218,166 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
         ...prev,
         { id: patientId, name: patientDoc.data()?.name || "", description: "" },
       ]);
-      setShifts([]);
       setLoading(false);
-      showAlert("Sukces!", "Dołączyłeś do profilu podopiecznego.");
+      setJoinModalVisible(false);
+      setInviteCode("");
+      showAlert("Sukces!", "Dołączono do profilu.");
+      fetchData();
     } catch (error) {
       setLoading(false);
-      showAlert("Błąd", "Wystąpił problem podczas dołączania.");
+      showAlert("Błąd", "Wystąpił problem.");
     }
   };
 
   const handleLogout = () => signOut(auth);
 
-  if (loading)
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-      </View>
+  const getShiftStatus = (shift: Shift) => {
+    // 1. Jeśli w bazie jest 'in_progress' (bo ktoś wszedł w wizytę)
+    if (shift.status === "in_progress") {
+      return {
+        label: "W TRAKCIE",
+        color: "#1976D2",
+        bg: "#E3F2FD",
+        active: true,
+      };
+    }
+    const start = shift.start.toDate();
+    const end = shift.end.toDate();
+    const now = new Date();
+
+    // 2. Jeśli czas pasuje (nawet jeśli status w bazie to jeszcze 'scheduled')
+    if (now >= start && now <= end)
+      return {
+        label: "CZAS NA WIZYTĘ",
+        color: "#4CAF50",
+        bg: "#E8F5E9",
+        active: true,
+      };
+    if (now > end)
+      return {
+        label: "PO CZASIE",
+        color: "#FF9800",
+        bg: "#FFF3E0",
+        active: true,
+      };
+
+    return {
+      label: "ZAPLANOWANA",
+      color: theme.colors.textSecondary,
+      bg: "#F5F5F5",
+      active: false,
+    };
+  };
+
+  const renderCaregiverView = () => {
+    const activeShift = shifts.find((s) => getShiftStatus(s).active);
+    const markedDates: any = {};
+    shifts.forEach((s) => {
+      const dateKey = s.start.toDate().toISOString().split("T")[0];
+      markedDates[dateKey] = { marked: true, dotColor: theme.colors.primary };
+    });
+    markedDates[selectedDate] = {
+      ...markedDates[selectedDate],
+      selected: true,
+      selectedColor: theme.colors.primary,
+    };
+    const dayShifts = shifts.filter(
+      (s) => s.start.toDate().toISOString().split("T")[0] === selectedDate
     );
 
-  const renderCaregiverView = () => (
-    <View style={styles.content}>
-      {patients.length > 0 ? (
-        <>
-          <Text style={styles.title}>Zaplanowane wizyty</Text>
-          <FlatList
-            data={shifts}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.shiftCard}
-                onPress={() =>
-                  navigation.navigate("ShiftDetail", { shiftId: item.id })
-                }
+    return (
+      <View style={styles.content}>
+        {activeShift && (
+          <View style={styles.prioritySection}>
+            <Text style={styles.priorityTitle}>🔴 TERAZ / PILNE</Text>
+            <TouchableOpacity
+              style={[
+                styles.shiftCard,
+                {
+                  backgroundColor: "#E8F5E9",
+                  borderColor: "#4CAF50",
+                  borderWidth: 2,
+                },
+              ]}
+              onPress={() =>
+                navigation.navigate("ShiftDetail", { shiftId: activeShift.id })
+              }
+            >
+              <Text style={styles.cardTitle}>{activeShift.patientName}</Text>
+              <Text style={styles.cardTime}>
+                {activeShift.start
+                  .toDate()
+                  .toLocaleTimeString("pl-PL", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}{" "}
+                -{" "}
+                {activeShift.end
+                  .toDate()
+                  .toLocaleTimeString("pl-PL", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+              </Text>
+              <Text
+                style={{ color: "#2e7d32", fontWeight: "bold", marginTop: 5 }}
               >
-                <Text style={styles.cardTitle}>{item.patientName}</Text>
-                <Text style={styles.cardText}>
-                  {item.start.toDate().toLocaleDateString("pl-PL")}
-                </Text>
-                <Text style={styles.cardText}>
-                  {item.start
-                    .toDate()
-                    .toLocaleTimeString("pl-PL", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}{" "}
-                  -{" "}
-                  {item.end
-                    .toDate()
-                    .toLocaleTimeString("pl-PL", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                </Text>
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={
-              <View style={styles.emptyStateContainer}>
-                <Text style={styles.emptyText}>
-                  Brak zadań na horyzoncie! 🎉
-                </Text>
-                <Text style={styles.subEmptyText}>
-                  Wszystkie wizyty zostały zakończone.
-                </Text>
-              </View>
-            }
-          />
-        </>
-      ) : (
-        <>
-          <Text style={styles.title}>Witaj!</Text>
-          <Text style={styles.emptyText}>
-            Nie jesteś jeszcze przypisany do żadnego podopiecznego. Poproś
-            Opiekuna Głównego o 6-cyfrowy kod zaproszenia i wprowadź go poniżej.
-          </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Wpisz 6-cyfrowy kod"
-            value={inviteCode}
-            onChangeText={setInviteCode}
-            placeholderTextColor={theme.colors.textSecondary}
-            keyboardType="number-pad"
-            maxLength={6}
-          />
-          <TouchableOpacity
-            style={styles.buttonPrimary}
-            onPress={handleJoinWithCode}
-          >
-            <Text style={styles.buttonPrimaryText}>Dołącz</Text>
-          </TouchableOpacity>
-        </>
-      )}
-    </View>
-  );
+                KLIKNIJ ABY OTWORZYĆ
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <Calendar
+          current={selectedDate}
+          onDayPress={(day: any) => setSelectedDate(day.dateString)}
+          markedDates={markedDates}
+          theme={{
+            todayTextColor: theme.colors.primary,
+            arrowColor: theme.colors.primary,
+            dotColor: theme.colors.primary,
+            selectedDayBackgroundColor: theme.colors.primary,
+          }}
+          style={styles.calendar}
+        />
+
+        <Text style={styles.dateHeader}>Zadania na: {selectedDate}</Text>
+        <FlatList
+          data={dayShifts}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.shiftCard}
+              onPress={() =>
+                navigation.navigate("ShiftDetail", { shiftId: item.id })
+              }
+            >
+              <Text style={styles.cardTitle}>{item.patientName}</Text>
+              <Text style={styles.cardTime}>
+                {item.start
+                  .toDate()
+                  .toLocaleTimeString("pl-PL", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}{" "}
+                -{" "}
+                {item.end
+                  .toDate()
+                  .toLocaleTimeString("pl-PL", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+              </Text>
+            </TouchableOpacity>
+          )}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>Wolne! Brak wizyt tego dnia.</Text>
+          }
+          style={{ marginTop: 5 }}
+        />
+      </View>
+    );
+  };
 
   const renderOwnerView = () => (
     <View style={styles.content}>
@@ -289,6 +407,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
               )}
               <View style={styles.cardInfo}>
                 <Text style={styles.cardTitle}>{item.name}</Text>
+                {/* TU BYŁ BŁĄD: Teraz używamy poprawnego stylu cardText */}
                 <Text style={styles.cardText} numberOfLines={1}>
                   {item.description}
                 </Text>
@@ -303,6 +422,13 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     </View>
   );
 
+  if (loading)
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={theme.colors.card} />
@@ -314,9 +440,11 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
           <Text style={styles.logoutText}>Wyloguj</Text>
         </TouchableOpacity>
       </View>
+
       {userProfile?.role === "opiekun_glowny"
         ? renderOwnerView()
         : renderCaregiverView()}
+
       {userProfile?.role === "opiekun_glowny" && (
         <TouchableOpacity
           style={styles.fab}
@@ -325,6 +453,59 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
           <Text style={styles.fabText}>+</Text>
         </TouchableOpacity>
       )}
+
+      {userProfile?.role === "opiekun" && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => setJoinModalVisible(true)}
+        >
+          <Text style={styles.fabText}>+</Text>
+        </TouchableOpacity>
+      )}
+
+      <Modal
+        visible={isJoinModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setJoinModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.modalContainer}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Dołącz do profilu</Text>
+            <Text style={styles.modalSub}>
+              Wpisz 6-cyfrowy kod od Opiekuna Głównego:
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="123456"
+              value={inviteCode}
+              onChangeText={setInviteCode}
+              keyboardType="number-pad"
+              maxLength={6}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalBtnCancel}
+                onPress={() => setJoinModalVisible(false)}
+              >
+                <Text style={{ color: "gray" }}>Anuluj</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalBtnJoin}
+                onPress={handleJoinWithCode}
+              >
+                <Text style={{ color: "white", fontWeight: "bold" }}>
+                  Dołącz
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -368,12 +549,47 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     marginBottom: theme.spacing.medium,
   },
+  prioritySection: { marginBottom: 15 },
+  priorityTitle: {
+    color: "#d32f2f",
+    fontWeight: "bold",
+    marginBottom: 5,
+    fontSize: 12,
+  },
+  calendar: { borderRadius: 10, elevation: 2, marginBottom: 15 },
+  dateHeader: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 10,
+  },
+  shiftCard: {
+    backgroundColor: "white",
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#eee",
+    elevation: 2,
+  },
+  statusBadge: { fontSize: 12, fontWeight: "bold", textTransform: "uppercase" },
+  cardDate: { fontSize: 12, color: "#666" },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginTop: 5,
+  },
+  cardTime: { fontSize: 14, color: theme.colors.textSecondary, marginTop: 2 },
+  // === DODANO BRAKUJĄCY STYL ===
+  cardText: { fontSize: 14, color: theme.colors.textSecondary, marginTop: 5 },
+  // ==============================
   emptyText: {
-    fontSize: theme.fonts.body,
+    fontSize: 14,
     color: theme.colors.textSecondary,
     textAlign: "center",
-    marginTop: theme.spacing.large,
-    lineHeight: 22,
+    marginTop: 20,
+    fontStyle: "italic",
   },
   subEmptyText: {
     fontSize: 14,
@@ -401,24 +617,63 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   avatarText: { color: "white", fontSize: 20, fontWeight: "bold" },
-  shiftCard: {
-    backgroundColor: "#e9f5ff",
-    padding: theme.spacing.medium,
-    borderRadius: 10,
-    marginBottom: theme.spacing.medium,
-    borderWidth: 1,
-    borderColor: "#bce0ff",
+  fab: {
+    position: "absolute",
+    right: theme.spacing.large,
+    bottom: theme.spacing.large,
+    backgroundColor: theme.colors.primary,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 8,
   },
-  cardTitle: {
-    fontSize: theme.fonts.subtitle,
+  fabText: {
+    color: theme.colors.primaryText,
+    fontSize: 30,
+    lineHeight: 30,
+    marginTop: -2,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  modalContent: {
+    backgroundColor: "white",
+    width: "80%",
+    padding: 20,
+    borderRadius: 15,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 20,
     fontWeight: "bold",
-    color: theme.colors.text,
+    marginBottom: 10,
+    textAlign: "center",
   },
-  cardText: {
-    fontSize: theme.fonts.body,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
+  modalSub: { color: "gray", marginBottom: 20, textAlign: "center" },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 18,
+    textAlign: "center",
+    marginBottom: 20,
+    letterSpacing: 5,
   },
+  modalButtons: { flexDirection: "row", justifyContent: "space-between" },
+  modalBtnCancel: { padding: 10 },
+  modalBtnJoin: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+
   input: {
     backgroundColor: theme.colors.card,
     borderWidth: 1,
@@ -441,24 +696,6 @@ const styles = StyleSheet.create({
     color: theme.colors.primaryText,
     fontSize: theme.fonts.body,
     fontWeight: "bold",
-  },
-  fab: {
-    position: "absolute",
-    right: theme.spacing.large,
-    bottom: theme.spacing.large,
-    backgroundColor: theme.colors.primary,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 8,
-  },
-  fabText: {
-    color: theme.colors.primaryText,
-    fontSize: 30,
-    lineHeight: 30,
-    marginTop: -2,
   },
 });
 

@@ -1,7 +1,7 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
-// Ekrany aplikacji właściwej
+// Import wszystkich ekranów
 import HomeScreen from "../screens/HomeScreen";
 import AddPatientScreen from "../screens/AddPatientScreen";
 import PatientDetailScreen from "../screens/PatientDetailScreen";
@@ -10,13 +10,29 @@ import ManageCaregiversScreen from "../screens/ManageCaregiversScreen";
 import ScheduleVisitScreen from "../screens/ScheduleVisitScreen";
 import ShiftDetailScreen from "../screens/ShiftDetailScreen";
 import ReportDetailScreen from "../screens/ReportDetailScreen";
+import MedicalHistoryScreen from "../screens/MedicalHistoryScreen";
 import EditVisitScreen from "../screens/EditVisitScreen";
 
-const Stack = createNativeStackNavigator();
+// Definiujemy typy parametrów dla każdego ekranu (Dobra praktyka)
+export type RootStackParamList = {
+  Home: undefined;
+  AddPatient: undefined;
+  PatientDetail: { patientId: string; patientName: string };
+  EditPatient: { patientId: string };
+  ManageCaregivers: { patientId: string };
+  ScheduleVisit: { patientId: string; patientName: string };
+  ShiftDetail: { shiftId: string };
+  ReportDetail: { shiftId: string };
+  MedicalHistory: { patientId: string };
+  EditVisit: { shiftId: string };
+};
+
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const AppNavigator = () => {
   return (
-    <Stack.Navigator>
+    // @ts-ignore - Ignorujemy błąd 'id is missing', to problem typów w v7
+    <Stack.Navigator screenOptions={{ headerBackTitleVisible: false }}>
       <Stack.Screen
         name="Home"
         component={HomeScreen}
@@ -58,9 +74,14 @@ const AppNavigator = () => {
         options={{ title: "Raport z Wizyty" }}
       />
       <Stack.Screen
+        name="MedicalHistory"
+        component={MedicalHistoryScreen}
+        options={{ title: "Kartoteka Medyczna" }}
+      />
+      <Stack.Screen
         name="EditVisit"
         component={EditVisitScreen}
-        options={{ title: "Edytuj wizytę" }}
+        options={{ title: "Edytuj Wizytę" }}
       />
     </Stack.Navigator>
   );

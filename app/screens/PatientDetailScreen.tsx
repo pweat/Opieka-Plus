@@ -8,6 +8,7 @@ import {
   Image,
   FlatList,
   Alert,
+  ScrollView,
 } from "react-native";
 import {
   doc,
@@ -66,13 +67,24 @@ LocaleConfig.locales["pl"] = {
 };
 LocaleConfig.defaultLocale = "pl";
 
+interface Task {
+  description: string;
+  isDone: boolean;
+}
 interface Shift {
   id: string;
   patientName: string;
   caregiverId: string;
   start: Timestamp;
-  status: string;
   end?: Timestamp;
+  status: string;
+  moods?: string[];
+  drinkAmount?: number;
+  toiletUrine?: boolean;
+  toiletBowel?: boolean;
+  tasks?: Task[];
+  appetite?: string;
+  strength?: string;
 }
 interface CaregiverInfo {
   id: string;
@@ -94,9 +106,27 @@ const PatientDetailScreen = ({
     {}
   );
   const [allShifts, setAllShifts] = useState<Shift[]>([]);
+
+  const [activeTab, setActiveTab] = useState<"dashboard" | "calendar">(
+    "dashboard"
+  );
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
   );
+
+  const [liveShift, setLiveShift] = useState<Shift | null>(null);
+
+  // Rozbudowane statystyki
+  const [dailyStats, setDailyStats] = useState({
+    drinks: 0,
+    mood: "",
+    hasUrine: false,
+    hasBowel: false,
+    tasksDone: 0,
+    tasksTotal: 0,
+    lastAppetite: "-",
+    lastStrength: "-",
+  });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -108,8 +138,7 @@ const PatientDetailScreen = ({
           navigation.goBack();
           return;
         }
-        const pData = patientDoc.data();
-        setPatient({ id: patientDoc.id, ...pData });
+        setPatient({ id: patientDoc.id, ...patientDoc.data() });
 
         const shiftsQuery = query(
           collection(db, "shifts"),
@@ -122,12 +151,80 @@ const PatientDetailScreen = ({
         );
         setAllShifts(shiftsData);
 
+        // --- Logika Dashboardu ---
+        const now = new Date();
+        const todayStr = now.toISOString().split("T")[0];
+
+        const current = shiftsData.find((s) => {
+          const start = s.start.toDate();
+          const end = s.end?.toDate();
+          return (
+            s.status === "in_progress" ||
+            (end && now >= start && now <= end && s.status !== "completed")
+          );
+        });
+        setLiveShift(current || null);
+
+        // Agregacja danych z dzisiaj
+        const todayShifts = shiftsData.filter(
+          (s) => s.start.toDate().toISOString().split("T")[0] === todayStr
+        );
+
+        let totalDrinks = 0;
+        let hasUrine = false;
+        let hasBowel = false;
+        let tDone = 0;
+        let tTotal = 0;
+        let lastApp = "-";
+        let lastStr = "-";
+        const moodsSet = new Set<string>();
+
+        // Sortujemy od najstarszej do najnowszej dzisiaj, żeby wziąć ostatni wpisany stan
+        const todayShiftsSorted = [...todayShifts].reverse();
+
+        todayShiftsSorted.forEach((s) => {
+          if (s.drinkAmount) totalDrinks += s.drinkAmount;
+          if (s.toiletUrine) hasUrine = true;
+          if (s.toiletBowel) hasBowel = true;
+          if (s.moods) s.moods.forEach((m) => moodsSet.add(m));
+
+          if (s.tasks) {
+            tTotal += s.tasks.length;
+            tDone += s.tasks.filter((t) => t.isDone).length;
+          }
+          if (s.appetite) lastApp = s.appetite; // Nadpisuje, więc zostanie ostatni
+          if (s.strength) lastStr = s.strength;
+        });
+
+        setDailyStats({
+          drinks: totalDrinks,
+          mood:
+            Array.from(moodsSet).slice(0, 2).join(", ") +
+            (moodsSet.size > 2 ? "..." : ""),
+          hasUrine,
+          hasBowel,
+          tasksDone: tDone,
+          tasksTotal: tTotal,
+          lastAppetite:
+            lastApp === "good"
+              ? "😋"
+              : lastApp === "bad"
+              ? "🤢"
+              : lastApp === "normal"
+              ? "😐"
+              : "-",
+          lastStrength: lastStr,
+        });
+        // -------------------------
+
         const uniqueIds = new Set<string>();
         shiftsData.forEach((s) => {
           if (s.caregiverId) uniqueIds.add(s.caregiverId);
         });
-        if (pData.caregiverIds) {
-          pData.caregiverIds.forEach((id: string) => uniqueIds.add(id));
+        if (patientDoc.data().caregiverIds) {
+          patientDoc
+            .data()
+            .caregiverIds.forEach((id: string) => uniqueIds.add(id));
         }
 
         const caregiversData = await Promise.all(
@@ -153,22 +250,6 @@ const PatientDetailScreen = ({
     return unsubscribe;
   }, [patientId, navigation]);
 
-  const markedDates: any = {};
-  allShifts.forEach((shift) => {
-    const dateKey = shift.start.toDate().toISOString().split("T")[0];
-    markedDates[dateKey] = { marked: true, dotColor: theme.colors.primary };
-  });
-  markedDates[selectedDate] = {
-    ...markedDates[selectedDate],
-    selected: true,
-    selectedColor: theme.colors.primary,
-  };
-
-  const selectedDateShifts = allShifts.filter((shift) => {
-    return shift.start.toDate().toISOString().split("T")[0] === selectedDate;
-  });
-  selectedDateShifts.sort((a, b) => a.start.toMillis() - b.start.toMillis());
-
   if (loading)
     return (
       <View style={[styles.container, styles.center]}>
@@ -182,17 +263,47 @@ const PatientDetailScreen = ({
       </View>
     );
 
-  const ListHeader = () => (
-    <View style={styles.headerContainer}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={() =>
-            navigation.navigate("EditPatient", { patientId: patient.id })
-          }
+  const TabSelector = () => (
+    <View style={styles.tabContainer}>
+      <TouchableOpacity
+        style={[
+          styles.tabButton,
+          activeTab === "dashboard" && styles.tabButtonActive,
+        ]}
+        onPress={() => setActiveTab("dashboard")}
+      >
+        <Text
+          style={[
+            styles.tabText,
+            activeTab === "dashboard" && styles.tabTextActive,
+          ]}
         >
-          <Text style={styles.editButtonText}>Edytuj</Text>
-        </TouchableOpacity>
+          🏠 Pulpit
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[
+          styles.tabButton,
+          activeTab === "calendar" && styles.tabButtonActive,
+        ]}
+        onPress={() => setActiveTab("calendar")}
+      >
+        <Text
+          style={[
+            styles.tabText,
+            activeTab === "calendar" && styles.tabTextActive,
+          ]}
+        >
+          📅 Harmonogram
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderDashboard = () => (
+    <ScrollView contentContainerStyle={styles.scrollContent}>
+      {/* Profil (bez ołówka, bo przenieśliśmy go na dół) */}
+      <View style={styles.profileHeader}>
         <View style={styles.avatarContainer}>
           {patient.photoURL ? (
             <Image source={{ uri: patient.photoURL }} style={styles.avatar} />
@@ -206,101 +317,218 @@ const PatientDetailScreen = ({
         </View>
         <Text style={styles.name}>{patient.name}</Text>
         <Text style={styles.description}>{patient.description}</Text>
+      </View>
 
-        <View style={styles.buttonRow}>
-          {/* PRZYCISK 1: Zaplanuj Wizytę (STYL PRIMARY) */}
-          <TouchableOpacity
-            style={styles.buttonPrimary}
-            onPress={() =>
-              navigation.navigate("ScheduleVisit", {
-                patientId: patient.id,
-                patientName: patient.name,
-              })
-            }
-          >
-            <Text style={styles.buttonPrimaryText}>Zaplanuj Wizytę</Text>
-          </TouchableOpacity>
+      {/* Statusy */}
+      {liveShift && (
+        <View style={styles.liveCard}>
+          <Text style={styles.liveTitle}>🔴 TERAZ U PODOPIECZNEGO</Text>
+          <Text style={styles.liveText}>
+            Opiekun:{" "}
+            <Text style={{ fontWeight: "bold" }}>
+              {caregiversMap[liveShift.caregiverId] || "Nieznany"}
+            </Text>
+          </Text>
+          <Text style={styles.liveSubText}>
+            Planowo do:{" "}
+            {liveShift.end
+              ?.toDate()
+              .toLocaleTimeString("pl-PL", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+          </Text>
+        </View>
+      )}
 
-          {/* PRZYCISK 2: Opiekunowie (TERAZ TEŻ STYL PRIMARY) */}
-          <TouchableOpacity
-            style={styles.buttonPrimary}
-            onPress={() =>
-              navigation.navigate("ManageCaregivers", { patientId: patient.id })
-            }
-          >
-            <Text style={styles.buttonPrimaryText}>Opiekunowie</Text>
-          </TouchableOpacity>
+      {/* Rozbudowane Podsumowanie */}
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>
+          📊 Dzisiaj ({new Date().toLocaleDateString("pl-PL")})
+        </Text>
+
+        <View style={styles.statsGrid}>
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>Zadania</Text>
+            <Text style={styles.statValue}>
+              {dailyStats.tasksDone}/{dailyStats.tasksTotal}
+            </Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>Wypito</Text>
+            <Text style={styles.statValue}>{dailyStats.drinks} szkl.</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>Toaleta</Text>
+            <Text style={styles.statValue}>
+              {dailyStats.hasUrine || dailyStats.hasBowel ? "✅" : "-"}
+            </Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>Apetyt</Text>
+            <Text style={styles.statValue}>{dailyStats.lastAppetite}</Text>
+          </View>
+        </View>
+
+        <View style={styles.moodRow}>
+          <Text style={styles.statLabel}>
+            Siła:{" "}
+            <Text style={{ color: theme.colors.text, fontWeight: "bold" }}>
+              {dailyStats.lastStrength}
+            </Text>
+          </Text>
+          <Text style={styles.statLabel}>
+            Nastrój:{" "}
+            <Text style={{ color: theme.colors.text, fontWeight: "bold" }}>
+              {dailyStats.mood || "-"}
+            </Text>
+          </Text>
         </View>
       </View>
 
-      <Calendar
-        current={selectedDate}
-        onDayPress={(day: any) => setSelectedDate(day.dateString)}
-        markedDates={markedDates}
-        theme={{
-          todayTextColor: theme.colors.primary,
-          arrowColor: theme.colors.primary,
-          dotColor: theme.colors.primary,
-          selectedDayBackgroundColor: theme.colors.primary,
-        }}
-      />
-      <Text style={styles.dateHeader}>Wizyty w dniu: {selectedDate}</Text>
-    </View>
+      {/* Siatka 4 Przycisków */}
+      <Text style={styles.sectionLabel}>Szybkie Akcje</Text>
+      <View style={styles.actionGrid}>
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={() =>
+            navigation.navigate("ScheduleVisit", {
+              patientId: patient.id,
+              patientName: patient.name,
+            })
+          }
+        >
+          <Text style={styles.actionBtnIcon}>📅</Text>
+          <Text style={styles.actionBtnText}>Zaplanuj</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={() =>
+            navigation.navigate("ManageCaregivers", { patientId: patient.id })
+          }
+        >
+          <Text style={styles.actionBtnIcon}>👥</Text>
+          <Text style={styles.actionBtnText}>Opiekunowie</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={() =>
+            navigation.navigate("MedicalHistory", { patientId: patient.id })
+          }
+        >
+          <Text style={styles.actionBtnIcon}>🗂️</Text>
+          <Text style={styles.actionBtnText}>Kartoteka</Text>
+        </TouchableOpacity>
+
+        {/* 4. PRZYCISK - EDYCJA PROFILU */}
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={() =>
+            navigation.navigate("EditPatient", { patientId: patient.id })
+          }
+        >
+          <Text style={styles.actionBtnIcon}>⚙️</Text>
+          <Text style={styles.actionBtnText}>Edytuj Profil</Text>
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
   );
+
+  const renderCalendarView = () => {
+    const markedDates: any = {};
+    allShifts.forEach((shift) => {
+      const dateKey = shift.start.toDate().toISOString().split("T")[0];
+      markedDates[dateKey] = { marked: true, dotColor: theme.colors.primary };
+    });
+    markedDates[selectedDate] = {
+      ...markedDates[selectedDate],
+      selected: true,
+      selectedColor: theme.colors.primary,
+    };
+
+    const selectedDateShifts = allShifts.filter(
+      (shift) =>
+        shift.start.toDate().toISOString().split("T")[0] === selectedDate
+    );
+    selectedDateShifts.sort((a, b) => a.start.toMillis() - b.start.toMillis());
+
+    return (
+      <View style={{ flex: 1 }}>
+        <Calendar
+          current={selectedDate}
+          onDayPress={(day: any) => setSelectedDate(day.dateString)}
+          markedDates={markedDates}
+          theme={{
+            todayTextColor: theme.colors.primary,
+            arrowColor: theme.colors.primary,
+            dotColor: theme.colors.primary,
+            selectedDayBackgroundColor: theme.colors.primary,
+          }}
+        />
+        <Text style={styles.dateHeader}>Wizyty w dniu: {selectedDate}</Text>
+
+        <FlatList
+          data={selectedDateShifts}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.shiftCard}
+              onPress={() => {
+                if (item.status === "completed") {
+                  navigation.navigate("ReportDetail", { shiftId: item.id });
+                } else {
+                  navigation.navigate("EditVisit", { shiftId: item.id });
+                }
+              }}
+            >
+              <View>
+                <Text style={styles.cardTitle}>
+                  {item.start
+                    .toDate()
+                    .toLocaleTimeString("pl-PL", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  -
+                  {item.end
+                    ? item.end
+                        .toDate()
+                        .toLocaleTimeString("pl-PL", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                    : ""}
+                </Text>
+                <Text style={styles.statusText}>
+                  {item.status === "completed"
+                    ? "✅ Zakończona"
+                    : "🟡 Zaplanowana"}
+                </Text>
+              </View>
+              <View style={styles.caregiverBadge}>
+                <Text style={styles.caregiverText}>
+                  👤 {caregiversMap[item.caregiverId] || "Nieznany"}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>Brak wizyt w wybranym dniu.</Text>
+          }
+          contentContainerStyle={{ paddingBottom: 50 }}
+        />
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
-      <FlatList
-        data={selectedDateShifts}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={ListHeader}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.shiftCard}
-            onPress={() => {
-              if (item.status === "completed") {
-                navigation.navigate("ReportDetail", { shiftId: item.id });
-              } else {
-                navigation.navigate("EditVisit", { shiftId: item.id });
-              }
-            }}
-          >
-            <View>
-              <Text style={styles.cardTitle}>
-                {item.start
-                  .toDate()
-                  .toLocaleTimeString("pl-PL", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                -
-                {item.end
-                  ? item.end
-                      .toDate()
-                      .toLocaleTimeString("pl-PL", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
-                  : ""}
-              </Text>
-              <Text style={styles.statusText}>
-                {item.status === "completed"
-                  ? "✅ Zakończona"
-                  : "🟡 Zaplanowana"}
-              </Text>
-            </View>
-            <View style={styles.caregiverBadge}>
-              <Text style={styles.caregiverText}>
-                👤 {caregiversMap[item.caregiverId] || "Nieznany"}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        )}
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>Brak wizyt w wybranym dniu.</Text>
-        }
-        contentContainerStyle={{ paddingBottom: 50 }}
-      />
+      <TabSelector />
+      <View style={styles.contentContainer}>
+        {activeTab === "dashboard" ? renderDashboard() : renderCalendarView()}
+      </View>
     </View>
   );
 };
@@ -308,70 +536,147 @@ const PatientDetailScreen = ({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   center: { justifyContent: "center", alignItems: "center" },
-  headerContainer: { marginBottom: 10 },
-  header: {
-    padding: theme.spacing.large,
-    paddingBottom: 5,
-    backgroundColor: theme.colors.card,
-    elevation: 3,
+  contentContainer: { flex: 1 },
+  scrollContent: { padding: 20 },
+
+  tabContainer: {
+    flexDirection: "row",
+    backgroundColor: "white",
+    elevation: 4,
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 15,
     alignItems: "center",
-    marginBottom: 15,
+    borderBottomWidth: 3,
+    borderBottomColor: "transparent",
   },
-  editButton: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-    padding: 5,
-    backgroundColor: theme.colors.background,
-    borderRadius: 5,
-    zIndex: 10,
+  tabButtonActive: { borderBottomColor: theme.colors.primary },
+  tabText: {
+    fontSize: 16,
+    color: theme.colors.textSecondary,
+    fontWeight: "bold",
   },
-  editButtonText: { color: theme.colors.primary, fontWeight: "600" },
-  avatarContainer: { marginBottom: 10, marginTop: 5 },
-  avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: "#eee" },
+  tabTextActive: { color: theme.colors.primary },
+
+  profileHeader: { alignItems: "center", marginBottom: 20 },
+  avatarContainer: { marginBottom: 10, position: "relative" },
+  avatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "#eee",
+  },
   avatarPlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     backgroundColor: theme.colors.primary,
     justifyContent: "center",
     alignItems: "center",
   },
-  avatarText: { color: "white", fontSize: 30, fontWeight: "bold" },
+  avatarText: { color: "white", fontSize: 40, fontWeight: "bold" },
   name: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "bold",
-    marginBottom: 2,
-    textAlign: "center",
     color: theme.colors.text,
+    marginTop: 5,
   },
   description: {
     fontSize: 14,
     color: theme.colors.textSecondary,
-    marginBottom: 15,
     textAlign: "center",
-  },
-  buttonRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
-    marginBottom: 10,
+    marginTop: 2,
   },
 
-  // STYL GŁÓWNEGO PRZYCISKU (Teraz używany przez oba)
-  buttonPrimary: {
-    flex: 1,
-    backgroundColor: theme.colors.primary,
-    padding: 10,
+  liveCard: {
+    width: "100%",
+    backgroundColor: "#E8F5E9",
+    borderWidth: 1,
+    borderColor: "#4CAF50",
     borderRadius: 10,
-    alignItems: "center",
-    marginHorizontal: 5,
+    padding: 15,
+    marginBottom: 15,
   },
-  buttonPrimaryText: {
-    color: theme.colors.primaryText,
+  liveTitle: {
+    color: "#d32f2f",
     fontWeight: "bold",
     fontSize: 12,
+    marginBottom: 5,
   },
+  liveText: { fontSize: 16, color: "#333" },
+  liveSubText: { fontSize: 12, color: "#666", marginTop: 2 },
+
+  // SUMMARY STYLES
+  summaryCard: {
+    width: "100%",
+    backgroundColor: "white",
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 20,
+    elevation: 1,
+  },
+  summaryTitle: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  statItem: {
+    width: "48%",
+    backgroundColor: "#f9f9f9",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 8,
+    alignItems: "center",
+  },
+  statLabel: { fontSize: 12, color: theme.colors.textSecondary },
+  statValue: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: theme.colors.primary,
+    marginTop: 2,
+  },
+  moodRow: {
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+    paddingTop: 10,
+    flexDirection: "row",
+    justifyContent: "space-around",
+  },
+
+  sectionLabel: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 10,
+  },
+  actionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  actionBtn: {
+    width: "48%",
+    backgroundColor: "white",
+    borderRadius: 12,
+    padding: 20,
+    alignItems: "center",
+    marginBottom: 15,
+    elevation: 2,
+  },
+  actionBtnIcon: { fontSize: 30, marginBottom: 5 },
+  actionBtnText: { fontWeight: "bold", color: theme.colors.text },
 
   dateHeader: {
     fontSize: 16,
@@ -379,7 +684,6 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     padding: 15,
     backgroundColor: "#f0f0f0",
-    marginTop: 10,
   },
   shiftCard: {
     backgroundColor: theme.colors.card,
