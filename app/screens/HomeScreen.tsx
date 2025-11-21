@@ -14,6 +14,7 @@ import {
   Image,
   Modal,
   KeyboardAvoidingView,
+  ScrollView,
 } from "react-native";
 import { auth, db } from "../../firebaseConfig";
 import { theme } from "../../theme";
@@ -33,6 +34,7 @@ import {
 import { useIsFocused } from "@react-navigation/native";
 import { Calendar, LocaleConfig } from "react-native-calendars";
 import { useAlert } from "../context/AlertContext";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 LocaleConfig.locales["pl"] = {
   monthNames: [
@@ -232,7 +234,6 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
   const handleLogout = () => signOut(auth);
 
   const getShiftStatus = (shift: Shift) => {
-    // 1. Jeśli w bazie jest 'in_progress' (bo ktoś wszedł w wizytę)
     if (shift.status === "in_progress") {
       return {
         label: "W TRAKCIE",
@@ -245,7 +246,6 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     const end = shift.end.toDate();
     const now = new Date();
 
-    // 2. Jeśli czas pasuje (nawet jeśli status w bazie to jeszcze 'scheduled')
     if (now >= start && now <= end)
       return {
         label: "CZAS NA WIZYTĘ",
@@ -269,7 +269,68 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     };
   };
 
+  // === WIDOK OPIEKUNA ===
   const renderCaregiverView = () => {
+    // SCENARIUSZ 0: Brak przypisanych podopiecznych
+    if (patients.length === 0) {
+      return (
+        <ScrollView
+          contentContainerStyle={[
+            styles.content,
+            {
+              justifyContent: "center",
+              alignItems: "center",
+              minHeight: "80%",
+            },
+          ]}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ width: "100%", alignItems: "center" }}
+          >
+            <View style={styles.emptyDashboardContainer}>
+              <View
+                style={[styles.emptyIconCircle, { backgroundColor: "#E3F2FD" }]}
+              >
+                <MaterialCommunityIcons
+                  name="shield-account"
+                  size={80}
+                  color="#1976D2"
+                />
+              </View>
+              <Text style={styles.emptyTitle}>Witaj w Zespole!</Text>
+              <Text style={styles.emptyDesc}>
+                Aktualnie nie jesteś przypisany/a do żadnego podopiecznego.
+                {"\n\n"}
+                Aby rozpocząć pracę, poproś Opiekuna Głównego o 6-cyfrowy kod
+                zaproszenia.
+              </Text>
+
+              <View style={{ width: "100%", marginTop: 5 }}>
+                <TextInput
+                  style={styles.bigInput}
+                  placeholder="Kod zaproszenia"
+                  value={inviteCode}
+                  onChangeText={setInviteCode}
+                  placeholderTextColor={theme.colors.textSecondary}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  textAlign="center"
+                />
+                <TouchableOpacity
+                  style={styles.bigAddButton}
+                  onPress={handleJoinWithCode}
+                >
+                  <Text style={styles.bigAddButtonText}>Dołącz do Zespołu</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </ScrollView>
+      );
+    }
+
+    // SCENARIUSZ 1: Są podopieczni
     const activeShift = shifts.find((s) => getShiftStatus(s).active);
     const markedDates: any = {};
     shifts.forEach((s) => {
@@ -379,65 +440,252 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     );
   };
 
-  const renderOwnerView = () => (
-    <View style={styles.content}>
-      <Text style={styles.title}>Twoi podopieczni</Text>
-      <FlatList
-        data={patients}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.patientCard}
-            onPress={() =>
-              navigation.navigate("PatientDetail", {
-                patientId: item.id,
-                patientName: item.name,
-              })
-            }
-          >
-            <View style={styles.cardHeader}>
-              {item.photoURL ? (
-                <Image source={{ uri: item.photoURL }} style={styles.avatar} />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Text style={styles.avatarText}>
-                    {item.name.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-              )}
-              <View style={styles.cardInfo}>
-                <Text style={styles.cardTitle}>{item.name}</Text>
-                {/* TU BYŁ BŁĄD: Teraz używamy poprawnego stylu cardText */}
-                <Text style={styles.cardText} numberOfLines={1}>
-                  {item.description}
+  // === WIDOK OPIEKUNA GŁÓWNEGO ===
+  const renderOwnerView = () => {
+    // SCENARIUSZ 0: Brak podopiecznych
+    if (patients.length === 0) {
+      return (
+        <View
+          style={[
+            styles.content,
+            { justifyContent: "center", alignItems: "center" },
+          ]}
+        >
+          <View style={styles.emptyDashboardContainer}>
+            <View style={styles.emptyIconCircle}>
+              <MaterialCommunityIcons
+                name="account-heart"
+                size={80}
+                color={theme.colors.primary}
+              />
+            </View>
+            <Text style={styles.emptyTitle}>Zacznijmy!</Text>
+            <Text style={styles.emptyDesc}>
+              Aktualnie nie masz przypisanych żadnych podopiecznych.
+              {"\n\n"}
+              Utwórz profil dla bliskiej osoby, aby móc planować wizyty i
+              zarządzać opieką.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.bigAddButton}
+              onPress={() => navigation.navigate("AddPatient")}
+            >
+              <MaterialCommunityIcons
+                name="plus-circle"
+                size={24}
+                color="white"
+                style={{ marginRight: 10 }}
+              />
+              <Text style={styles.bigAddButtonText}>Dodaj Podopiecznego</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
+    // SCENARIUSZ 1: Jeden podopieczny (PULPIT)
+    if (patients.length === 1) {
+      const p = patients[0];
+      return (
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={{ paddingBottom: 100 }}
+        >
+          <View style={styles.heroCard}>
+            <View style={styles.heroHeader}>
+              <View style={styles.heroAvatarContainer}>
+                {p.photoURL ? (
+                  <Image
+                    source={{ uri: p.photoURL }}
+                    style={styles.heroAvatar}
+                  />
+                ) : (
+                  <View style={styles.heroAvatarPlaceholder}>
+                    <Text style={styles.heroAvatarText}>
+                      {p.name.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <View style={{ flex: 1, justifyContent: "center" }}>
+                <Text style={styles.heroLabel}>PODOPIECZNY</Text>
+                <Text style={styles.heroName}>{p.name}</Text>
+                <Text style={styles.heroDesc} numberOfLines={2}>
+                  {p.description}
                 </Text>
               </View>
             </View>
-          </TouchableOpacity>
-        )}
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>Brak podopiecznych. Dodaj kogoś.</Text>
-        }
-      />
-    </View>
-  );
 
-  if (loading)
+            <TouchableOpacity
+              style={styles.heroMainButton}
+              onPress={() =>
+                navigation.navigate("PatientDetail", {
+                  patientId: p.id,
+                  patientName: p.name,
+                })
+              }
+            >
+              <Text style={styles.heroMainButtonText}>Otwórz Panel</Text>
+              <MaterialCommunityIcons
+                name="arrow-right"
+                size={20}
+                color="white"
+              />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.sectionLabel}>Szybkie Akcje</Text>
+          <View style={styles.actionGrid}>
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() =>
+                navigation.navigate("ScheduleVisit", {
+                  patientId: p.id,
+                  patientName: p.name,
+                })
+              }
+            >
+              <View style={[styles.iconCircle, { backgroundColor: "#E3F2FD" }]}>
+                <MaterialCommunityIcons
+                  name="calendar-plus"
+                  size={24}
+                  color="#1976D2"
+                />
+              </View>
+              <Text style={styles.actionBtnText}>Zaplanuj</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() =>
+                navigation.navigate("ManageCaregivers", { patientId: p.id })
+              }
+            >
+              <View style={[styles.iconCircle, { backgroundColor: "#E8F5E9" }]}>
+                <MaterialCommunityIcons
+                  name="account-group"
+                  size={24}
+                  color="#388E3C"
+                />
+              </View>
+              <Text style={styles.actionBtnText}>Opiekunowie</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() =>
+                navigation.navigate("MedicalHistory", { patientId: p.id })
+              }
+            >
+              <View style={[styles.iconCircle, { backgroundColor: "#FFF3E0" }]}>
+                <MaterialCommunityIcons
+                  name="file-document-outline"
+                  size={24}
+                  color="#F57C00"
+                />
+              </View>
+              <Text style={styles.actionBtnText}>Kartoteka</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() =>
+                navigation.navigate("EditPatient", { patientId: p.id })
+              }
+            >
+              <View style={[styles.iconCircle, { backgroundColor: "#F3E5F5" }]}>
+                <MaterialCommunityIcons
+                  name="cog-outline"
+                  size={24}
+                  color="#7B1FA2"
+                />
+              </View>
+              <Text style={styles.actionBtnText}>Edytuj Profil</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      );
+    }
+
+    // SCENARIUSZ 2: Wiele osób (LISTA)
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
+      <View style={styles.content}>
+        <Text style={styles.title}>Twoi podopieczni</Text>
+        <FlatList
+          data={patients}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.patientCard}
+              activeOpacity={0.8}
+              onPress={() =>
+                navigation.navigate("PatientDetail", {
+                  patientId: item.id,
+                  patientName: item.name,
+                })
+              }
+            >
+              <View style={styles.cardInner}>
+                <View style={styles.avatarWrapper}>
+                  {item.photoURL ? (
+                    <Image
+                      source={{ uri: item.photoURL }}
+                      style={styles.avatar}
+                    />
+                  ) : (
+                    <View style={styles.avatarPlaceholder}>
+                      <Text style={styles.avatarText}>
+                        {item.name.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.cardContent}>
+                  <Text style={styles.cardLabel}>PODOPIECZNY</Text>
+                  <Text style={styles.cardTitle}>{item.name}</Text>
+                  <Text style={styles.cardDesc} numberOfLines={1}>
+                    {item.description || "Brak opisu"}
+                  </Text>
+                </View>
+                <View style={styles.arrowContainer}>
+                  <MaterialCommunityIcons
+                    name="chevron-right"
+                    size={24}
+                    color={theme.colors.textSecondary}
+                  />
+                </View>
+              </View>
+            </TouchableOpacity>
+          )}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>
+              Brak podopiecznych. Dodaj kogoś.
+            </Text>
+          }
+          style={styles.list}
+        />
       </View>
     );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={theme.colors.card} />
       <View style={styles.header}>
         <Text style={styles.welcomeText} numberOfLines={1}>
-          Witaj, {userProfile?.name || userProfile?.email}!
+          Witaj,{" "}
+          <Text style={{ fontWeight: "bold", color: theme.colors.primary }}>
+            {userProfile?.name || userProfile?.email}
+          </Text>
+          !
         </Text>
         <TouchableOpacity onPress={handleLogout}>
-          <Text style={styles.logoutText}>Wyloguj</Text>
+          <MaterialCommunityIcons
+            name="logout"
+            size={24}
+            color={theme.colors.primary}
+          />
         </TouchableOpacity>
       </View>
 
@@ -445,21 +693,21 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
         ? renderOwnerView()
         : renderCaregiverView()}
 
-      {userProfile?.role === "opiekun_glowny" && (
+      {userProfile?.role === "opiekun_glowny" && patients.length > 1 && (
         <TouchableOpacity
           style={styles.fab}
           onPress={() => navigation.navigate("AddPatient")}
         >
-          <Text style={styles.fabText}>+</Text>
+          <MaterialCommunityIcons name="plus" size={30} color="white" />
         </TouchableOpacity>
       )}
 
-      {userProfile?.role === "opiekun" && (
+      {userProfile?.role === "opiekun" && patients.length > 0 && (
         <TouchableOpacity
           style={styles.fab}
           onPress={() => setJoinModalVisible(true)}
         >
-          <Text style={styles.fabText}>+</Text>
+          <MaterialCommunityIcons name="plus" size={30} color="white" />
         </TouchableOpacity>
       )}
 
@@ -531,7 +779,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#ddd",
     elevation: 3,
   },
-  welcomeText: { color: theme.colors.textSecondary, fontSize: 14, flex: 1 },
+  welcomeText: { color: theme.colors.text, fontSize: 16, flex: 1 },
   logoutText: {
     color: theme.colors.primary,
     fontSize: 14,
@@ -549,6 +797,202 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     marginBottom: theme.spacing.medium,
   },
+
+  // EMPTY STATE
+  emptyDashboardContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 50,
+    backgroundColor: "white",
+    padding: 30,
+    borderRadius: 20,
+    elevation: 3,
+    width: "100%",
+  },
+  emptyIconCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "#FFF8E1",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 10,
+  },
+  emptyDesc: {
+    fontSize: 16,
+    color: theme.colors.textSecondary,
+    textAlign: "center",
+    marginBottom: 15,
+    lineHeight: 24,
+  },
+  bigAddButton: {
+    backgroundColor: theme.colors.primary,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 15,
+    paddingHorizontal: 25,
+    borderRadius: 30,
+    elevation: 5,
+    width: "100%",
+  },
+  bigAddButtonText: { color: "white", fontSize: 16, fontWeight: "bold" },
+  bigInput: {
+    backgroundColor: "#F5F5F5",
+    borderWidth: 1,
+    borderColor: "#DDD",
+    borderRadius: 15,
+    padding: 15,
+    fontSize: 24,
+    fontWeight: "bold",
+    textAlign: "center",
+    letterSpacing: 5,
+    marginBottom: 20,
+  },
+
+  // CARD STYLES (Opiekun Główny)
+  heroCard: {
+    backgroundColor: "white",
+    borderRadius: 20,
+    padding: 20,
+    marginTop: 10,
+    marginBottom: 25,
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  heroHeader: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
+  heroAvatarContainer: { marginRight: 15 },
+  heroAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#eee",
+  },
+  heroAvatarPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: theme.colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  heroAvatarText: { color: "white", fontSize: 32, fontWeight: "bold" },
+  heroLabel: {
+    fontSize: 12,
+    color: theme.colors.primary,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  heroName: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  heroDesc: { fontSize: 14, color: theme.colors.textSecondary },
+  heroMainButton: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 15,
+    borderRadius: 12,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 2,
+  },
+  heroMainButtonText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "bold",
+    marginRight: 8,
+  },
+
+  // KARTA PACJENTA (LISTA)
+  patientCard: {
+    backgroundColor: theme.colors.card,
+    padding: theme.spacing.medium,
+    borderRadius: 16,
+    marginBottom: theme.spacing.medium,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+  },
+  cardInner: { flexDirection: "row", alignItems: "center", padding: 15 },
+  avatarWrapper: {
+    padding: 2,
+    backgroundColor: "white",
+    borderRadius: 32,
+    borderWidth: 1,
+    borderColor: "#eee",
+    elevation: 1,
+  },
+  avatar: { width: 60, height: 60, borderRadius: 30, backgroundColor: "#eee" },
+  avatarPlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#E0E0E0",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarText: { color: "white", fontSize: 24, fontWeight: "bold" },
+  cardContent: { flex: 1, marginLeft: 15, justifyContent: "center" },
+  cardLabel: {
+    fontSize: 10,
+    color: theme.colors.primary,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    marginBottom: 2,
+  },
+  cardTitle: { fontSize: 18, fontWeight: "bold", color: theme.colors.text },
+  cardDesc: { fontSize: 13, color: theme.colors.textSecondary, marginTop: 2 },
+  arrowContainer: { marginLeft: 10 },
+
+  sectionLabel: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 15,
+  },
+  actionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  actionBtn: {
+    width: "48%",
+    backgroundColor: "white",
+    borderRadius: 12,
+    padding: 20,
+    alignItems: "center",
+    marginBottom: 15,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+  },
+  iconCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  actionBtnText: { fontSize: 12, fontWeight: "600", color: theme.colors.text },
+
+  // OPIEKUNKA - WIDOK
   prioritySection: { marginBottom: 15 },
   priorityTitle: {
     color: "#d32f2f",
@@ -563,27 +1007,20 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     marginBottom: 10,
   },
+
   shiftCard: {
-    backgroundColor: "white",
     padding: 15,
     borderRadius: 10,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#eee",
     elevation: 2,
   },
   statusBadge: { fontSize: 12, fontWeight: "bold", textTransform: "uppercase" },
   cardDate: { fontSize: 12, color: "#666" },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: theme.colors.text,
-    marginTop: 5,
-  },
   cardTime: { fontSize: 14, color: theme.colors.textSecondary, marginTop: 2 },
-  // === DODANO BRAKUJĄCY STYL ===
   cardText: { fontSize: 14, color: theme.colors.textSecondary, marginTop: 5 },
-  // ==============================
+
+  list: { width: "100%" },
   emptyText: {
     fontSize: 14,
     color: theme.colors.textSecondary,
@@ -598,81 +1035,6 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   emptyStateContainer: { alignItems: "center", marginTop: 50 },
-  patientCard: {
-    backgroundColor: theme.colors.card,
-    padding: theme.spacing.medium,
-    borderRadius: 10,
-    marginBottom: theme.spacing.medium,
-    elevation: 3,
-  },
-  cardHeader: { flexDirection: "row", alignItems: "center" },
-  cardInfo: { flex: 1, marginLeft: theme.spacing.medium },
-  avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: "#eee" },
-  avatarPlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: theme.colors.primary,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  avatarText: { color: "white", fontSize: 20, fontWeight: "bold" },
-  fab: {
-    position: "absolute",
-    right: theme.spacing.large,
-    bottom: theme.spacing.large,
-    backgroundColor: theme.colors.primary,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 8,
-  },
-  fabText: {
-    color: theme.colors.primaryText,
-    fontSize: 30,
-    lineHeight: 30,
-    marginTop: -2,
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  modalContent: {
-    backgroundColor: "white",
-    width: "80%",
-    padding: 20,
-    borderRadius: 15,
-    elevation: 5,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    marginBottom: 10,
-    textAlign: "center",
-  },
-  modalSub: { color: "gray", marginBottom: 20, textAlign: "center" },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 10,
-    fontSize: 18,
-    textAlign: "center",
-    marginBottom: 20,
-    letterSpacing: 5,
-  },
-  modalButtons: { flexDirection: "row", justifyContent: "space-between" },
-  modalBtnCancel: { padding: 10 },
-  modalBtnJoin: {
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-  },
 
   input: {
     backgroundColor: theme.colors.card,
@@ -696,6 +1058,67 @@ const styles = StyleSheet.create({
     color: theme.colors.primaryText,
     fontSize: theme.fonts.body,
     fontWeight: "bold",
+  },
+
+  fab: {
+    position: "absolute",
+    right: theme.spacing.large,
+    bottom: theme.spacing.large,
+    backgroundColor: theme.colors.primary,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 8,
+  },
+  fabText: {
+    color: theme.colors.primaryText,
+    fontSize: 30,
+    lineHeight: 30,
+    marginTop: -2,
+  },
+
+  // MODAL
+  modalContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  modalContent: {
+    backgroundColor: "white",
+    width: "85%",
+    padding: 25,
+    borderRadius: 20,
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    marginBottom: 10,
+    textAlign: "center",
+    color: theme.colors.text,
+  },
+  modalSub: { color: "gray", marginBottom: 20, textAlign: "center" },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 12,
+    padding: 15,
+    fontSize: 18,
+    textAlign: "center",
+    marginBottom: 20,
+    letterSpacing: 5,
+  },
+  modalButtons: { flexDirection: "row", justifyContent: "space-between" },
+  modalBtnCancel: { padding: 15 },
+  modalBtnJoin: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 12,
+    elevation: 2,
   },
 });
 
