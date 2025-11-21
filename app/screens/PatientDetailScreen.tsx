@@ -20,9 +20,10 @@ import {
   orderBy,
   Timestamp,
 } from "firebase/firestore";
-import { db } from "../../firebaseConfig";
+import { db, auth } from "../../firebaseConfig";
 import { theme } from "../../theme";
 import { Calendar, LocaleConfig } from "react-native-calendars";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 LocaleConfig.locales["pl"] = {
   monthNames: [
@@ -67,10 +68,6 @@ LocaleConfig.locales["pl"] = {
 };
 LocaleConfig.defaultLocale = "pl";
 
-interface Task {
-  description: string;
-  isDone: boolean;
-}
 interface Shift {
   id: string;
   patientName: string;
@@ -85,6 +82,10 @@ interface Shift {
   tasks?: Task[];
   appetite?: string;
   strength?: string;
+}
+interface Task {
+  description: string;
+  isDone: boolean;
 }
 interface CaregiverInfo {
   id: string;
@@ -115,31 +116,44 @@ const PatientDetailScreen = ({
   );
 
   const [liveShift, setLiveShift] = useState<Shift | null>(null);
-
-  // Rozbudowane statystyki
   const [dailyStats, setDailyStats] = useState({
     drinks: 0,
     mood: "",
     hasUrine: false,
     hasBowel: false,
-    tasksDone: 0,
-    tasksTotal: 0,
-    lastAppetite: "-",
-    lastStrength: "-",
+    hasData: false,
   });
+
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
+        const user = auth.currentUser;
+        if (user) {
+          const userDoc = await getDoc(doc(db, "users", user.uid));
+          if (userDoc.exists()) {
+            setUserRole(userDoc.data().role);
+          }
+        }
+
         const patientDoc = await getDoc(doc(db, "patients", patientId));
         if (!patientDoc.exists()) {
           Alert.alert("Błąd", "Nie znaleziono podopiecznego.");
           navigation.goBack();
           return;
         }
-        setPatient({ id: patientDoc.id, ...patientDoc.data() });
+        const pData = patientDoc.data();
+        setPatient({ id: patientDoc.id, ...pData });
 
+        // Jeśli to opiekunka, nie pobieramy historii ani statystyk - oszczędzamy transfer
+        if (userRole === "opiekun") {
+          setLoading(false);
+          return;
+        }
+
+        // Reszta logiki TYLKO dla opiekuna głównego
         const shiftsQuery = query(
           collection(db, "shifts"),
           where("patientId", "==", patientId),
@@ -165,7 +179,6 @@ const PatientDetailScreen = ({
         });
         setLiveShift(current || null);
 
-        // Agregacja danych z dzisiaj
         const todayShifts = shiftsData.filter(
           (s) => s.start.toDate().toISOString().split("T")[0] === todayStr
         );
@@ -173,27 +186,16 @@ const PatientDetailScreen = ({
         let totalDrinks = 0;
         let hasUrine = false;
         let hasBowel = false;
-        let tDone = 0;
-        let tTotal = 0;
-        let lastApp = "-";
-        let lastStr = "-";
         const moodsSet = new Set<string>();
+        let dataExists = false;
 
-        // Sortujemy od najstarszej do najnowszej dzisiaj, żeby wziąć ostatni wpisany stan
-        const todayShiftsSorted = [...todayShifts].reverse();
-
-        todayShiftsSorted.forEach((s) => {
+        todayShifts.forEach((s) => {
+          if (s.status === "completed" || s.status === "in_progress")
+            dataExists = true;
           if (s.drinkAmount) totalDrinks += s.drinkAmount;
           if (s.toiletUrine) hasUrine = true;
           if (s.toiletBowel) hasBowel = true;
           if (s.moods) s.moods.forEach((m) => moodsSet.add(m));
-
-          if (s.tasks) {
-            tTotal += s.tasks.length;
-            tDone += s.tasks.filter((t) => t.isDone).length;
-          }
-          if (s.appetite) lastApp = s.appetite; // Nadpisuje, więc zostanie ostatni
-          if (s.strength) lastStr = s.strength;
         });
 
         setDailyStats({
@@ -203,28 +205,15 @@ const PatientDetailScreen = ({
             (moodsSet.size > 2 ? "..." : ""),
           hasUrine,
           hasBowel,
-          tasksDone: tDone,
-          tasksTotal: tTotal,
-          lastAppetite:
-            lastApp === "good"
-              ? "😋"
-              : lastApp === "bad"
-              ? "🤢"
-              : lastApp === "normal"
-              ? "😐"
-              : "-",
-          lastStrength: lastStr,
+          hasData: dataExists,
         });
-        // -------------------------
 
         const uniqueIds = new Set<string>();
         shiftsData.forEach((s) => {
           if (s.caregiverId) uniqueIds.add(s.caregiverId);
         });
-        if (patientDoc.data().caregiverIds) {
-          patientDoc
-            .data()
-            .caregiverIds.forEach((id: string) => uniqueIds.add(id));
+        if (pData.caregiverIds) {
+          pData.caregiverIds.forEach((id: string) => uniqueIds.add(id));
         }
 
         const caregiversData = await Promise.all(
@@ -248,7 +237,7 @@ const PatientDetailScreen = ({
 
     const unsubscribe = navigation.addListener("focus", fetchData);
     return unsubscribe;
-  }, [patientId, navigation]);
+  }, [patientId, navigation, userRole]); // Dodano userRole do zależności
 
   if (loading)
     return (
@@ -262,6 +251,56 @@ const PatientDetailScreen = ({
         <Text>Brak danych.</Text>
       </View>
     );
+
+  // === WIDOK OPIEKUNKI (MINIMALISTYCZNY) ===
+  if (userRole === "opiekun") {
+    return (
+      <View style={styles.container}>
+        <View style={[styles.center, { flex: 1, padding: 30 }]}>
+          <View style={styles.simpleCard}>
+            <View style={styles.avatarContainer}>
+              {patient.photoURL ? (
+                <Image
+                  source={{ uri: patient.photoURL }}
+                  style={styles.avatarBig}
+                />
+              ) : (
+                <View style={styles.avatarPlaceholderBig}>
+                  <Text style={styles.avatarTextBig}>
+                    {patient.name.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.nameBig}>{patient.name}</Text>
+            <Text style={styles.description}>{patient.description}</Text>
+
+            <View style={styles.divider} />
+
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                marginTop: 10,
+              }}
+            >
+              <MaterialCommunityIcons
+                name="shield-check"
+                size={24}
+                color="green"
+                style={{ marginRight: 10 }}
+              />
+              <Text style={{ color: "green", fontWeight: "bold" }}>
+                Jesteś w zespole opiekunów
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // === PONIŻEJ TYLKO DLA OPIEKUNA GŁÓWNEGO ===
 
   const TabSelector = () => (
     <View style={styles.tabContainer}>
@@ -302,7 +341,6 @@ const PatientDetailScreen = ({
 
   const renderDashboard = () => (
     <ScrollView contentContainerStyle={styles.scrollContent}>
-      {/* Profil (bez ołówka, bo przenieśliśmy go na dół) */}
       <View style={styles.profileHeader}>
         <View style={styles.avatarContainer}>
           {patient.photoURL ? (
@@ -314,12 +352,19 @@ const PatientDetailScreen = ({
               </Text>
             </View>
           )}
+          <TouchableOpacity
+            style={styles.editIconBadge}
+            onPress={() =>
+              navigation.navigate("EditPatient", { patientId: patient.id })
+            }
+          >
+            <Text style={{ fontSize: 12 }}>✎</Text>
+          </TouchableOpacity>
         </View>
         <Text style={styles.name}>{patient.name}</Text>
         <Text style={styles.description}>{patient.description}</Text>
       </View>
 
-      {/* Statusy */}
       {liveShift && (
         <View style={styles.liveCard}>
           <Text style={styles.liveTitle}>🔴 TERAZ U PODOPIECZNEGO</Text>
@@ -341,53 +386,37 @@ const PatientDetailScreen = ({
         </View>
       )}
 
-      {/* Rozbudowane Podsumowanie */}
       <View style={styles.summaryCard}>
         <Text style={styles.summaryTitle}>
           📊 Dzisiaj ({new Date().toLocaleDateString("pl-PL")})
         </Text>
-
-        <View style={styles.statsGrid}>
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Zadania</Text>
-            <Text style={styles.statValue}>
-              {dailyStats.tasksDone}/{dailyStats.tasksTotal}
+        {dailyStats.hasData ? (
+          <>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryItem}>
+                💧 {dailyStats.drinks} szkl.
+              </Text>
+              <Text style={styles.summaryItem}>
+                🚽 {dailyStats.hasUrine || dailyStats.hasBowel ? "Była" : "-"}
+              </Text>
+            </View>
+            <Text style={styles.summaryMood}>
+              🧠 Nastrój: {dailyStats.mood || "Brak danych"}
             </Text>
+          </>
+        ) : (
+          <View style={styles.tutorialBox}>
+            <MaterialCommunityIcons
+              name="information-outline"
+              size={24}
+              color={theme.colors.textSecondary}
+            />
+            <Text style={styles.tutorialText}>Brak danych z dzisiaj.</Text>
           </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Wypito</Text>
-            <Text style={styles.statValue}>{dailyStats.drinks} szkl.</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Toaleta</Text>
-            <Text style={styles.statValue}>
-              {dailyStats.hasUrine || dailyStats.hasBowel ? "✅" : "-"}
-            </Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statLabel}>Apetyt</Text>
-            <Text style={styles.statValue}>{dailyStats.lastAppetite}</Text>
-          </View>
-        </View>
-
-        <View style={styles.moodRow}>
-          <Text style={styles.statLabel}>
-            Siła:{" "}
-            <Text style={{ color: theme.colors.text, fontWeight: "bold" }}>
-              {dailyStats.lastStrength}
-            </Text>
-          </Text>
-          <Text style={styles.statLabel}>
-            Nastrój:{" "}
-            <Text style={{ color: theme.colors.text, fontWeight: "bold" }}>
-              {dailyStats.mood || "-"}
-            </Text>
-          </Text>
-        </View>
+        )}
       </View>
 
-      {/* Siatka 4 Przycisków */}
-      <Text style={styles.sectionLabel}>Szybkie Akcje</Text>
+      <Text style={styles.sectionLabel}>Akcje</Text>
       <View style={styles.actionGrid}>
         <TouchableOpacity
           style={styles.actionBtn}
@@ -398,7 +427,13 @@ const PatientDetailScreen = ({
             })
           }
         >
-          <Text style={styles.actionBtnIcon}>📅</Text>
+          <View style={[styles.iconCircle, { backgroundColor: "#E3F2FD" }]}>
+            <MaterialCommunityIcons
+              name="calendar-plus"
+              size={24}
+              color="#1976D2"
+            />
+          </View>
           <Text style={styles.actionBtnText}>Zaplanuj</Text>
         </TouchableOpacity>
 
@@ -408,7 +443,13 @@ const PatientDetailScreen = ({
             navigation.navigate("ManageCaregivers", { patientId: patient.id })
           }
         >
-          <Text style={styles.actionBtnIcon}>👥</Text>
+          <View style={[styles.iconCircle, { backgroundColor: "#E8F5E9" }]}>
+            <MaterialCommunityIcons
+              name="account-group"
+              size={24}
+              color="#388E3C"
+            />
+          </View>
           <Text style={styles.actionBtnText}>Opiekunowie</Text>
         </TouchableOpacity>
 
@@ -418,18 +459,29 @@ const PatientDetailScreen = ({
             navigation.navigate("MedicalHistory", { patientId: patient.id })
           }
         >
-          <Text style={styles.actionBtnIcon}>🗂️</Text>
+          <View style={[styles.iconCircle, { backgroundColor: "#FFF3E0" }]}>
+            <MaterialCommunityIcons
+              name="file-document-outline"
+              size={24}
+              color="#F57C00"
+            />
+          </View>
           <Text style={styles.actionBtnText}>Kartoteka</Text>
         </TouchableOpacity>
 
-        {/* 4. PRZYCISK - EDYCJA PROFILU */}
         <TouchableOpacity
           style={styles.actionBtn}
           onPress={() =>
             navigation.navigate("EditPatient", { patientId: patient.id })
           }
         >
-          <Text style={styles.actionBtnIcon}>⚙️</Text>
+          <View style={[styles.iconCircle, { backgroundColor: "#F3E5F5" }]}>
+            <MaterialCommunityIcons
+              name="cog-outline"
+              size={24}
+              color="#7B1FA2"
+            />
+          </View>
           <Text style={styles.actionBtnText}>Edytuj Profil</Text>
         </TouchableOpacity>
       </View>
@@ -468,7 +520,6 @@ const PatientDetailScreen = ({
           }}
         />
         <Text style={styles.dateHeader}>Wizyty w dniu: {selectedDate}</Text>
-
         <FlatList
           data={selectedDateShifts}
           keyExtractor={(item) => item.id}
@@ -539,6 +590,51 @@ const styles = StyleSheet.create({
   contentContainer: { flex: 1 },
   scrollContent: { padding: 20 },
 
+  // STYLE PROSTEGO WIDOKU OPIEKUNKI
+  simpleCard: {
+    backgroundColor: "white",
+    padding: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    width: "100%",
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+  },
+  avatarBig: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "#eee",
+    marginBottom: 20,
+  },
+  avatarPlaceholderBig: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: theme.colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  avatarTextBig: { color: "white", fontSize: 50, fontWeight: "bold" },
+  nameBig: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  divider: {
+    width: "100%",
+    height: 1,
+    backgroundColor: "#eee",
+    marginVertical: 20,
+  },
+
+  // TABS
   tabContainer: {
     flexDirection: "row",
     backgroundColor: "white",
@@ -579,6 +675,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   avatarText: { color: "white", fontSize: 40, fontWeight: "bold" },
+  editIconBadge: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    backgroundColor: "white",
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 3,
+  },
   name: {
     fontSize: 24,
     fontWeight: "bold",
@@ -609,8 +717,6 @@ const styles = StyleSheet.create({
   },
   liveText: { fontSize: 16, color: "#333" },
   liveSubText: { fontSize: 12, color: "#666", marginTop: 2 },
-
-  // SUMMARY STYLES
   summaryCard: {
     width: "100%",
     backgroundColor: "white",
@@ -626,35 +732,21 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     textAlign: "center",
   },
-  statsGrid: {
+  summaryRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    marginBottom: 10,
-  },
-  statItem: {
-    width: "48%",
-    backgroundColor: "#f9f9f9",
-    padding: 10,
-    borderRadius: 8,
+    justifyContent: "space-around",
     marginBottom: 8,
-    alignItems: "center",
   },
-  statLabel: { fontSize: 12, color: theme.colors.textSecondary },
-  statValue: {
+  summaryItem: {
     fontSize: 16,
     fontWeight: "bold",
     color: theme.colors.primary,
-    marginTop: 2,
   },
-  moodRow: {
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
-    paddingTop: 10,
-    flexDirection: "row",
-    justifyContent: "space-around",
+  summaryMood: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    textAlign: "center",
   },
-
   sectionLabel: {
     fontSize: 16,
     fontWeight: "bold",
@@ -674,10 +766,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 15,
     elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
   },
-  actionBtnIcon: { fontSize: 30, marginBottom: 5 },
-  actionBtnText: { fontWeight: "bold", color: theme.colors.text },
-
+  iconCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  actionBtnText: { fontSize: 12, fontWeight: "600", color: theme.colors.text },
+  actionBtnSub: {
+    fontSize: 11,
+    color: theme.colors.textSecondary,
+    textAlign: "center",
+    marginTop: 2,
+  },
   dateHeader: {
     fontSize: 16,
     fontWeight: "bold",
@@ -712,6 +819,15 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontStyle: "italic",
     marginTop: 20,
+  },
+  tutorialBox: { flexDirection: "row", alignItems: "center", padding: 5 },
+  tutorialText: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    fontStyle: "italic",
+    lineHeight: 18,
   },
 });
 
