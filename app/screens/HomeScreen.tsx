@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { auth, db } from "../../firebaseConfig";
 import { theme } from "../../theme";
-// Usunęliśmy import signOut, bo teraz wylogowanie jest w profilu
+import { signOut } from "firebase/auth";
 import {
   collection,
   query,
@@ -39,21 +39,29 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [patients, setPatients] = useState<any[]>([]);
   const [shifts, setShifts] = useState<any[]>([]);
+
+  // Ten hook pozwala wykryć, że wróciliśmy na ekran (np. z ustawień)
   const isFocused = useIsFocused();
 
   useEffect(() => {
-    if (isFocused) fetchData();
+    if (isFocused) {
+      fetchData();
+    }
   }, [isFocused]);
 
   const fetchData = async () => {
-    setLoading(true);
+    // Nie ustawiamy setLoading(true) tutaj, żeby ekran nie migał przy każdym powrocie
+    // setLoading(true);
+
     const user = auth.currentUser;
     if (user) {
+      // 1. Zawsze pobieramy świeże dane użytkownika (dla zdjęcia/imienia)
       const userDoc = await getDoc(doc(db, "users", user.uid));
       if (userDoc.exists()) {
         const profile = userDoc.data() as UserProfile;
         setUserProfile(profile);
 
+        // 2. Pobieranie pacjentów zależnie od roli
         if (profile.role === "opiekun_glowny") {
           const q = query(
             collection(db, "patients"),
@@ -101,6 +109,8 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     setLoading(false);
   };
 
+  const handleLogout = () => signOut(auth);
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -123,9 +133,9 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
           !
         </Text>
 
-        {/* ZMIANA: Zamiast wylogowania, ikona profilu */}
+        {/* Ikonka Profilu */}
         <TouchableOpacity
-          style={styles.profileBtn} // To jest ten styl, którego brakowało
+          style={styles.profileBtn}
           onPress={() => navigation.navigate("UserProfile")}
         >
           <MaterialCommunityIcons
@@ -184,7 +194,6 @@ const styles = StyleSheet.create({
   },
   welcomeText: { color: theme.colors.text, fontSize: 16, flex: 1 },
 
-  // TUTAJ DODAŁEM BRAKUJĄCY STYL
   profileBtn: {
     padding: 5,
     marginLeft: 10,

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Calendar } from "react-native-calendars";
-import { theme } from "../../theme"; // Upewnij się, że ścieżka jest poprawna
+import { theme } from "../../theme";
 import {
   collection,
   query,
@@ -25,14 +25,14 @@ import {
   updateDoc,
   arrayUnion,
 } from "firebase/firestore";
-import { auth, db } from "../../firebaseConfig"; // Upewnij się, że ścieżka jest poprawna
-import { useAlert } from "../context/AlertContext"; // Upewnij się, że ścieżka jest poprawna
+import { auth, db } from "../../firebaseConfig";
+import { useAlert } from "../context/AlertContext";
 
 interface CaregiverDashboardProps {
   patients: any[];
   shifts: any[];
   navigation: any;
-  onRefresh: () => void; // Funkcja do odświeżania danych w HomeScreen
+  onRefresh: () => void;
 }
 
 const CaregiverDashboard = ({
@@ -41,15 +41,14 @@ const CaregiverDashboard = ({
   navigation,
   onRefresh,
 }: CaregiverDashboardProps) => {
-  const [selectedDate, setSelectedDate] = useState(
+  const [selectedDate, setSelectedDate] = React.useState(
     new Date().toISOString().split("T")[0]
   );
-  const [inviteCode, setInviteCode] = useState("");
-  const [isJoinModalVisible, setJoinModalVisible] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [inviteCode, setInviteCode] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
   const { showAlert } = useAlert();
 
-  // --- LOGIKA DOŁĄCZANIA (KOD) ---
+  // --- LOGIKA DOŁĄCZANIA ---
   const handleJoinWithCode = async () => {
     if (inviteCode.trim() === "")
       return showAlert("Błąd", "Wpisz kod zaproszenia.");
@@ -81,7 +80,6 @@ const CaregiverDashboard = ({
       ) {
         showAlert("Informacja", "Już jesteś przypisany.");
         onRefresh();
-        setJoinModalVisible(false);
         return;
       }
 
@@ -92,7 +90,6 @@ const CaregiverDashboard = ({
       });
 
       setLoading(false);
-      setJoinModalVisible(false);
       setInviteCode("");
       showAlert("Sukces!", "Dołączono do profilu.");
       onRefresh();
@@ -102,41 +99,70 @@ const CaregiverDashboard = ({
     }
   };
 
-  // --- LOGIKA KALENDARZA I ZADAŃ ---
+  // --- LOGIKA KALENDARZA I STATUSÓW ---
   const getShiftStatus = (shift: any) => {
     if (shift.status === "in_progress")
       return {
-        label: "W TRAKCIE",
-        color: "#1976D2",
-        bg: "#E3F2FD",
+        label: "WIZYTA W TOKU",
+        color: "#2E7D32",
+        bg: "#E8F5E9",
         active: true,
+        icon: "progress-clock",
       };
     const start = shift.start.toDate();
     const end = shift.end.toDate();
     const now = new Date();
-    if (now >= start && now <= end)
-      return {
-        label: "CZAS NA WIZYTĘ",
-        color: "#4CAF50",
-        bg: "#E8F5E9",
-        active: true,
-      };
+
     if (now > end)
       return {
-        label: "PO CZASIE",
-        color: "#FF9800",
+        label: "ZALEGŁA",
+        color: "#E65100",
         bg: "#FFF3E0",
         active: true,
+        icon: "alert-circle-outline",
       };
+    if (now >= start && now <= end)
+      return {
+        label: "TERAZ",
+        color: "#1565C0",
+        bg: "#E3F2FD",
+        active: true,
+        icon: "clock-alert-outline",
+      };
+
+    // Sprawdzanie czy dziś/jutro
+    const isToday = start.toDateString() === now.toDateString();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const isTomorrow = start.toDateString() === tomorrow.toDateString();
+
+    if (isToday)
+      return {
+        label: "DZISIAJ",
+        color: "#0277BD",
+        bg: "#E1F5FE",
+        active: false,
+        icon: "calendar-today",
+      };
+    if (isTomorrow)
+      return {
+        label: "JUTRO",
+        color: "#555",
+        bg: "#F5F5F5",
+        active: false,
+        icon: "calendar-arrow-right",
+      };
+
     return {
-      label: "ZAPLANOWANA",
+      label: "NADCHODZĄCA",
       color: theme.colors.textSecondary,
-      bg: "#F5F5F5",
+      bg: "#FAFAFA",
       active: false,
+      icon: "calendar-blank",
     };
   };
 
-  // Jeśli brak pacjentów - pusty stan
+  // WIDOK STARTOWY (BRAK PACJENTÓW)
   if (patients.length === 0) {
     return (
       <KeyboardAvoidingView
@@ -194,11 +220,14 @@ const CaregiverDashboard = ({
     );
   }
 
-  // Dane do renderowania
+  // PRZYGOTOWANIE DANYCH
   const activeShift = shifts.find((s) => getShiftStatus(s).active);
+  // Szukamy następnej (jeśli nie ma aktywnej)
   const nextShift = !activeShift
     ? shifts.find((s) => s.start.toDate() > new Date())
     : null;
+
+  const cardShift = activeShift || nextShift;
 
   const markedDates: any = {};
   shifts.forEach((s) => {
@@ -221,90 +250,90 @@ const CaregiverDashboard = ({
       contentContainerStyle={{ paddingBottom: 30 }}
       showsVerticalScrollIndicator={false}
     >
-      {/* HERO CARD */}
+      {/* KARTA STATUSU (HERO) - NAPRAWIONE KLIKANIE */}
       <View style={{ marginBottom: 20 }}>
-        {activeShift ? (
-          <TouchableOpacity
-            style={[
-              styles.heroStatusCard,
-              { backgroundColor: "#E8F5E9", borderColor: "#4CAF50" },
-            ]}
-            onPress={() =>
-              navigation.navigate("ShiftDetail", { shiftId: activeShift.id })
-            }
-          >
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                marginBottom: 5,
-              }}
-            >
-              <MaterialCommunityIcons
-                name="clock-fast"
-                size={24}
-                color="#2e7d32"
-              />
-              <Text style={[styles.heroStatusTitle, { color: "#2e7d32" }]}>
-                {" "}
-                TERAZ / PILNE
-              </Text>
-            </View>
-            <Text style={styles.heroStatusName}>{activeShift.patientName}</Text>
-            <Text style={styles.heroStatusTime}>
-              {activeShift.start
-                .toDate()
-                .toLocaleTimeString("pl-PL", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}{" "}
-              -{" "}
-              {activeShift.end
-                .toDate()
-                .toLocaleTimeString("pl-PL", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-            </Text>
-            <Text style={styles.heroStatusAction}>
-              Kliknij, aby otworzyć raport ›
-            </Text>
-          </TouchableOpacity>
-        ) : nextShift ? (
-          <View
-            style={[
-              styles.heroStatusCard,
-              { backgroundColor: "#E3F2FD", borderColor: "#2196F3" },
-            ]}
-          >
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                marginBottom: 5,
-              }}
-            >
-              <MaterialCommunityIcons
-                name="calendar-clock"
-                size={24}
-                color="#1565C0"
-              />
-              <Text style={[styles.heroStatusTitle, { color: "#1565C0" }]}>
-                {" "}
-                NAJBLIŻSZA WIZYTA
-              </Text>
-            </View>
-            <Text style={styles.heroStatusName}>{nextShift.patientName}</Text>
-            <Text style={styles.heroStatusTime}>
-              {nextShift.start.toDate().toLocaleDateString("pl-PL")} o{" "}
-              {nextShift.start
-                .toDate()
-                .toLocaleTimeString("pl-PL", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-            </Text>
-          </View>
+        {cardShift ? (
+          (() => {
+            const status = getShiftStatus(cardShift);
+            return (
+              <TouchableOpacity
+                style={[
+                  styles.heroStatusCard,
+                  { backgroundColor: status.bg, borderColor: status.color },
+                ]}
+                // TO JEST NAPRAWA: Przycisk działa
+                onPress={() =>
+                  navigation.navigate("ShiftDetail", { shiftId: cardShift.id })
+                }
+                activeOpacity={0.8}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    marginBottom: 5,
+                  }}
+                >
+                  <MaterialCommunityIcons
+                    name={status.icon as any}
+                    size={24}
+                    color={status.color}
+                  />
+                  <Text
+                    style={[
+                      styles.heroStatusTitle,
+                      { color: status.color, marginLeft: 5 },
+                    ]}
+                  >
+                    {status.label}
+                  </Text>
+                </View>
+                <Text style={styles.heroStatusName}>
+                  {cardShift.patientName}
+                </Text>
+                <Text style={styles.heroStatusTime}>
+                  {cardShift.start
+                    .toDate()
+                    .toLocaleTimeString("pl-PL", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}{" "}
+                  -{" "}
+                  {cardShift.end
+                    .toDate()
+                    .toLocaleTimeString("pl-PL", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                </Text>
+                {/* Jeśli to przyszła wizyta, dodaj datę */}
+                {!activeShift && (
+                  <Text
+                    style={{ fontSize: 14, color: "#666", marginBottom: 5 }}
+                  >
+                    {cardShift.start
+                      .toDate()
+                      .toLocaleDateString("pl-PL", {
+                        weekday: "long",
+                        day: "numeric",
+                        month: "long",
+                      })}
+                  </Text>
+                )}
+
+                <View
+                  style={[styles.openBtn, { backgroundColor: status.color }]}
+                >
+                  <Text style={styles.openBtnText}>OTWÓRZ</Text>
+                  <MaterialCommunityIcons
+                    name="arrow-right"
+                    size={18}
+                    color="white"
+                  />
+                </View>
+              </TouchableOpacity>
+            );
+          })()
         ) : (
           <View
             style={[
@@ -324,7 +353,12 @@ const CaregiverDashboard = ({
                 size={24}
                 color="gray"
               />
-              <Text style={[styles.heroStatusTitle, { color: "gray" }]}>
+              <Text
+                style={[
+                  styles.heroStatusTitle,
+                  { color: "gray", marginLeft: 5 },
+                ]}
+              >
                 {" "}
                 WOLNE
               </Text>
@@ -369,17 +403,7 @@ const CaregiverDashboard = ({
             </Text>
           </TouchableOpacity>
         ))}
-        <TouchableOpacity
-          style={styles.miniAddCard}
-          onPress={() => setJoinModalVisible(true)}
-        >
-          <MaterialCommunityIcons
-            name="plus"
-            size={24}
-            color={theme.colors.primary}
-          />
-          <Text style={styles.miniAddText}>Dodaj</Text>
-        </TouchableOpacity>
+        {/* Usunięto przycisk DODAJ dla opiekunki z tego miejsca, bo jest już w pustym stanie */}
       </View>
 
       {/* KALENDARZ */}
@@ -388,7 +412,7 @@ const CaregiverDashboard = ({
         current={selectedDate}
         onDayPress={(day: any) => setSelectedDate(day.dateString)}
         markedDates={markedDates}
-        firstDay={1} // Poniedziałek
+        firstDay={1}
         theme={{
           todayTextColor: theme.colors.primary,
           arrowColor: theme.colors.primary,
@@ -431,56 +455,10 @@ const CaregiverDashboard = ({
           <Text style={styles.emptyText}>Wolne! Brak wizyt tego dnia.</Text>
         )}
       </View>
-
-      {/* MODAL DOŁĄCZANIA */}
-      <Modal
-        visible={isJoinModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setJoinModalVisible(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "padding"}
-          style={styles.modalContainer}
-        >
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Dołącz do profilu</Text>
-            <Text style={styles.modalSub}>
-              Wpisz 6-cyfrowy kod od Opiekuna Głównego:
-            </Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="123456"
-              value={inviteCode}
-              onChangeText={setInviteCode}
-              keyboardType="number-pad"
-              maxLength={6}
-              autoFocus
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalBtnCancel}
-                onPress={() => setJoinModalVisible(false)}
-              >
-                <Text style={{ color: "gray" }}>Anuluj</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalBtnJoin}
-                onPress={handleJoinWithCode}
-              >
-                <Text style={{ color: "white", fontWeight: "bold" }}>
-                  Dołącz
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
     </ScrollView>
   );
 };
 
-// Style specyficzne dla tego widoku (skopiowane z oryginału)
 const styles = StyleSheet.create({
   content: {
     flex: 1,
@@ -543,21 +521,22 @@ const styles = StyleSheet.create({
     letterSpacing: 5,
     marginBottom: 20,
   },
+
   heroStatusCard: {
-    padding: 15,
-    borderRadius: 10,
-    borderWidth: 1,
+    padding: 20,
+    borderRadius: 15,
+    borderWidth: 2,
     marginBottom: 20,
     elevation: 3,
   },
-  heroStatusTitle: { fontWeight: "bold", fontSize: 12 },
+  heroStatusTitle: { fontWeight: "bold", fontSize: 13, letterSpacing: 0.5 },
   heroStatusName: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "bold",
     color: "#333",
     marginTop: 5,
   },
-  heroStatusTime: { fontSize: 14, color: "#666", marginTop: 5 },
+  heroStatusTime: { fontSize: 16, color: "#555", marginTop: 5 },
   heroStatusAction: {
     fontSize: 12,
     color: "#2e7d32",
@@ -565,6 +544,17 @@ const styles = StyleSheet.create({
     marginTop: 10,
     textAlign: "right",
   },
+  openBtn: {
+    marginTop: 15,
+    paddingVertical: 10,
+    borderRadius: 8,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 5,
+  },
+  openBtnText: { color: "white", fontWeight: "bold", letterSpacing: 1 },
+
   sectionLabel: {
     fontSize: 18,
     fontWeight: "bold",
@@ -603,22 +593,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: theme.colors.text,
   },
-  miniAddCard: {
-    backgroundColor: "#F5F5F5",
-    padding: 10,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    width: 90,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderStyle: "dashed",
-  },
-  miniAddText: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    marginTop: 5,
-  },
   calendar: { borderRadius: 10, elevation: 2, marginBottom: 15 },
   dateHeader: {
     fontSize: 16,
@@ -645,46 +619,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 20,
     fontStyle: "italic",
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  modalContent: {
-    backgroundColor: "white",
-    width: "85%",
-    padding: 25,
-    borderRadius: 20,
-    elevation: 10,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    marginBottom: 10,
-    textAlign: "center",
-    color: theme.colors.text,
-  },
-  modalSub: { color: "gray", marginBottom: 20, textAlign: "center" },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 12,
-    padding: 15,
-    fontSize: 18,
-    textAlign: "center",
-    marginBottom: 25,
-    letterSpacing: 5,
-  },
-  modalButtons: { flexDirection: "row", justifyContent: "space-between" },
-  modalBtnCancel: { padding: 15 },
-  modalBtnJoin: {
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 12,
-    elevation: 2,
   },
 });
 

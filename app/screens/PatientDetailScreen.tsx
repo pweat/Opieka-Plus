@@ -106,6 +106,7 @@ const PatientDetailScreen = ({
   );
   const [allShifts, setAllShifts] = useState<Shift[]>([]);
 
+  // Zakładki dla Szefa
   const [activeTab, setActiveTab] = useState<"dashboard" | "calendar">(
     "dashboard"
   );
@@ -113,6 +114,7 @@ const PatientDetailScreen = ({
     new Date().toISOString().split("T")[0]
   );
 
+  // Dashboard stats
   const [liveShift, setLiveShift] = useState<Shift | null>(null);
   const [dailyStats, setDailyStats] = useState({
     drinks: 0,
@@ -146,6 +148,7 @@ const PatientDetailScreen = ({
         const pData = patientDoc.data();
         setPatient({ id: patientDoc.id, ...pData });
 
+        // Pobieranie wizyt
         const shiftsQuery = query(
           collection(db, "shifts"),
           where("patientId", "==", patientId),
@@ -157,6 +160,7 @@ const PatientDetailScreen = ({
         );
         setAllShifts(shiftsData);
 
+        // Statystyki
         const now = new Date();
         const todayStr = now.toISOString().split("T")[0];
 
@@ -199,6 +203,7 @@ const PatientDetailScreen = ({
           hasData: dataExists,
         });
 
+        // Opiekunowie
         const uniqueIds = new Set<string>();
         shiftsData.forEach((s) => {
           if (s.caregiverId) uniqueIds.add(s.caregiverId);
@@ -238,31 +243,94 @@ const PatientDetailScreen = ({
         <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
-  if (!patient) return null;
+  if (!patient)
+    return (
+      <View style={styles.container}>
+        <Text>Brak danych.</Text>
+      </View>
+    );
 
   const isOwner = userRole === "opiekun_glowny";
-  const hasCaregivers = patient.caregiverIds && patient.caregiverIds.length > 0;
+
+  // === POMOCNIK: LOGIKA STATUSU NAGŁÓWKA ===
+  const getSmartHeaderStatus = (shift: Shift) => {
+    const now = new Date();
+    const start = shift.start.toDate();
+    const end = shift.end?.toDate() || new Date();
+    const isToday = start.toDateString() === now.toDateString();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const isTomorrow = start.toDateString() === tomorrow.toDateString();
+
+    if (shift.status === "in_progress")
+      return {
+        label: "WIZYTA W TOKU",
+        color: "#2E7D32",
+        bg: "#E8F5E9",
+        icon: "progress-clock",
+        active: true,
+      };
+    if (now > end && shift.status !== "completed")
+      return {
+        label: "ZALEGŁA / DO UZUPEŁNIENIA",
+        color: "#E65100",
+        bg: "#FFF3E0",
+        icon: "alert-circle-outline",
+        active: true,
+      };
+    if (now >= start && now <= end)
+      return {
+        label: "TERAZ",
+        color: "#1565C0",
+        bg: "#E3F2FD",
+        icon: "clock-alert-outline",
+        active: true,
+      };
+    if (isToday)
+      return {
+        label: "NAJBLIŻSZA: DZISIAJ",
+        color: "#0277BD",
+        bg: "#E1F5FE",
+        icon: "calendar-today",
+        active: false,
+      };
+    if (isTomorrow)
+      return {
+        label: "JUTRO",
+        color: "#555",
+        bg: "#F5F5F5",
+        icon: "calendar-arrow-right",
+        active: false,
+      };
+    return {
+      label: "NADCHODZĄCA",
+      color: "#555",
+      bg: "#FAFAFA",
+      icon: "calendar-blank",
+      active: false,
+    };
+  };
 
   // =====================================================================
-  // WIDOK OPIEKUNA
+  // 1. WIDOK OPIEKUNKI
   // =====================================================================
-  if (!isOwner) {
-    const myNextShift = allShifts.find(
-      (s) =>
-        s.caregiverId === currentUserId &&
-        s.status !== "completed" &&
-        s.start.toDate() >= new Date()
+  const renderCaregiverView = () => {
+    const shiftsAsc = [...allShifts].reverse();
+    const myNextShift = shiftsAsc.find(
+      (s) => s.caregiverId === currentUserId && s.status !== "completed"
     );
-    const futureShifts = allShifts
-      .filter((s) => s.start.toDate() >= new Date() && s.status !== "completed")
-      .reverse();
+    const futureShifts = shiftsAsc.filter(
+      (s) =>
+        s.id !== myNextShift?.id &&
+        s.start.toDate() > new Date() &&
+        s.status !== "completed"
+    );
 
     return (
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* KARTA PACJENTA */}
         <View style={styles.simpleProfileCard}>
           <View style={styles.avatarContainer}>
             {patient.photoURL ? (
@@ -280,47 +348,68 @@ const PatientDetailScreen = ({
           </View>
           <Text style={styles.nameBig}>{patient.name}</Text>
           <Text style={styles.descSimple}>{patient.description}</Text>
-
-          <TouchableOpacity
-            style={styles.medBtn}
-            onPress={() =>
-              navigation.navigate("MedicalHistory", { patientId: patient.id })
-            }
+          <View style={styles.divider} />
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
-            <MaterialCommunityIcons name="pill" size={20} color="white" />
-            <Text style={styles.medBtnText}>KARTOTEKA MEDYCZNA</Text>
-          </TouchableOpacity>
+            <MaterialCommunityIcons
+              name="shield-check"
+              size={20}
+              color="green"
+              style={{ marginRight: 5 }}
+            />
+            <Text style={{ color: "green", fontWeight: "600" }}>
+              Jesteś w zespole opiekunów
+            </Text>
+          </View>
         </View>
 
-        {/* NAJBLIŻSZA WIZYTA - TERAZ CAŁA KLIKALNA */}
-        {myNextShift && (
-          <TouchableOpacity
-            style={styles.nextShiftCard}
-            onPress={() =>
-              navigation.navigate("ShiftDetail", { shiftId: myNextShift.id })
-            }
-            activeOpacity={0.8}
-          >
-            <Text style={styles.sectionTitleSmall}>
-              TWOJA NAJBLIŻSZA WIZYTA
-            </Text>
-            <View style={styles.nextShiftRow}>
-              <MaterialCommunityIcons
-                name="calendar-clock"
-                size={32}
-                color={theme.colors.primary}
-              />
-              <View style={{ marginLeft: 15, flex: 1 }}>
-                <Text style={styles.nextShiftDate}>
-                  {myNextShift.start
-                    .toDate()
-                    .toLocaleDateString("pl-PL", {
-                      weekday: "long",
-                      day: "numeric",
-                      month: "long",
-                    })}
-                </Text>
-                <Text style={styles.nextShiftTime}>
+        {myNextShift &&
+          (() => {
+            const status = getSmartHeaderStatus(myNextShift);
+            return (
+              <TouchableOpacity
+                style={[
+                  styles.nextShiftCard,
+                  { borderLeftColor: status.color, backgroundColor: status.bg },
+                ]}
+                onPress={() =>
+                  navigation.navigate("ShiftDetail", {
+                    shiftId: myNextShift.id,
+                  })
+                }
+                activeOpacity={0.9}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 10,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <MaterialCommunityIcons
+                      name={status.icon as any}
+                      size={24}
+                      color={status.color}
+                    />
+                    <Text
+                      style={[
+                        styles.heroStatusTitle,
+                        { color: status.color, marginLeft: 5 },
+                      ]}
+                    >
+                      {status.label}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.cardTitle}>{myNextShift.patientName}</Text>
+                <Text style={styles.cardTimeBig}>
                   {myNextShift.start
                     .toDate()
                     .toLocaleTimeString([], {
@@ -335,27 +424,32 @@ const PatientDetailScreen = ({
                       minute: "2-digit",
                     })}
                 </Text>
-              </View>
-              {/* Strzałka wskazująca, że można kliknąć */}
-              <MaterialCommunityIcons
-                name="chevron-right"
-                size={24}
-                color="#ccc"
-              />
-            </View>
+                <Text style={styles.cardDateBig}>
+                  {myNextShift.start
+                    .toDate()
+                    .toLocaleDateString("pl-PL", {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                    })}
+                </Text>
+                <View
+                  style={[styles.openBtn, { backgroundColor: status.color }]}
+                >
+                  <Text style={styles.openBtnText}>OTWÓRZ</Text>
+                  <MaterialCommunityIcons
+                    name="arrow-right"
+                    size={18}
+                    color="white"
+                  />
+                </View>
+              </TouchableOpacity>
+            );
+          })()}
 
-            <View style={styles.openShiftBadge}>
-              <Text style={styles.openShiftBadgeText}>
-                Kliknij, aby otworzyć
-              </Text>
-            </View>
-          </TouchableOpacity>
-        )}
-
-        {/* LISTA WSZYSTKICH WIZYT */}
         <Text style={styles.listHeaderSimple}>Nadchodzący grafik</Text>
         {futureShifts.length > 0 ? (
-          futureShifts.map((s) => (
+          futureShifts.slice(0, 5).map((s) => (
             <View key={s.id} style={styles.simpleShiftRow}>
               <View style={styles.dateBadge}>
                 <Text style={styles.dayNum}>{s.start.toDate().getDate()}</Text>
@@ -392,50 +486,12 @@ const PatientDetailScreen = ({
         )}
       </ScrollView>
     );
-  }
+  };
 
   // =====================================================================
-  // WIDOK OPIEKUNA GŁÓWNEGO
+  // 2. WIDOK SZEFA - PULPIT
   // =====================================================================
-
-  const TabSelector = () => (
-    <View style={styles.tabContainer}>
-      <TouchableOpacity
-        style={[
-          styles.tabButton,
-          activeTab === "dashboard" && styles.tabButtonActive,
-        ]}
-        onPress={() => setActiveTab("dashboard")}
-      >
-        <Text
-          style={[
-            styles.tabText,
-            activeTab === "dashboard" && styles.tabTextActive,
-          ]}
-        >
-          🏠 Pulpit
-        </Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[
-          styles.tabButton,
-          activeTab === "calendar" && styles.tabButtonActive,
-        ]}
-        onPress={() => setActiveTab("calendar")}
-      >
-        <Text
-          style={[
-            styles.tabText,
-            activeTab === "calendar" && styles.tabTextActive,
-          ]}
-        >
-          📅 Harmonogram
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderDashboard = () => (
+  const renderOwnerDashboard = () => (
     <ScrollView contentContainerStyle={styles.scrollContent}>
       <View style={styles.profileHeader}>
         <View style={styles.avatarContainer}>
@@ -448,222 +504,157 @@ const PatientDetailScreen = ({
               </Text>
             </View>
           )}
-          {isOwner && (
-            <TouchableOpacity
-              style={styles.editIconBadge}
-              onPress={() =>
-                navigation.navigate("EditPatient", { patientId: patient.id })
-              }
-            >
-              <MaterialCommunityIcons
-                name="pencil"
-                size={16}
-                color={theme.colors.primary}
-              />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={styles.editIconBadge}
+            onPress={() =>
+              navigation.navigate("EditPatient", { patientId: patient.id })
+            }
+          >
+            <MaterialCommunityIcons
+              name="pencil"
+              size={16}
+              color={theme.colors.primary}
+            />
+          </TouchableOpacity>
         </View>
         <Text style={styles.name}>{patient.name}</Text>
         <Text style={styles.description}>{patient.description}</Text>
       </View>
 
-      {!hasCaregivers && isOwner ? (
-        <View style={styles.onboardingContainer}>
-          <Text style={styles.onboardingTitle}>👋 Konfiguracja profilu</Text>
-          <Text style={styles.onboardingSub}>
-            To jest nowy profil. Wykonaj te kroki, aby rozpocząć opiekę:
-          </Text>
-          <View style={styles.stepCard}>
-            <View style={styles.stepNumber}>
-              <Text style={styles.stepNumText}>1</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.stepTitle}>Zaproś Opiekuna</Text>
-              <Text style={styles.stepDesc}>
-                Dodaj osobę, która będzie pomagać.
-              </Text>
-              <TouchableOpacity
-                style={styles.stepActionBtn}
-                onPress={() =>
-                  navigation.navigate("ManageCaregivers", {
-                    patientId: patient.id,
-                  })
-                }
-              >
-                <Text style={styles.stepBtnText}>Dodaj Opiekuna</Text>
-                <MaterialCommunityIcons
-                  name="arrow-right"
-                  size={16}
-                  color="white"
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-          <View style={[styles.stepCard, { opacity: 0.8 }]}>
-            <View style={[styles.stepNumber, { backgroundColor: "#ccc" }]}>
-              <Text style={styles.stepNumText}>2</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.stepTitle}>Zaplanuj pierwszą wizytę</Text>
-              <Text style={styles.stepDesc}>
-                Będziesz mógł to zrobić po dodaniu opiekuna.
-              </Text>
-            </View>
-          </View>
-        </View>
-      ) : (
-        <>
-          {liveShift && (
-            <View style={styles.liveCard}>
-              <Text style={styles.liveTitle}>🔴 TERAZ U PODOPIECZNEGO</Text>
-              <Text style={styles.liveText}>
-                Opiekun:{" "}
-                <Text style={{ fontWeight: "bold" }}>
-                  {caregiversMap[liveShift.caregiverId] || "Nieznany"}
-                </Text>
-              </Text>
-              <Text style={styles.liveSubText}>
-                Planowo do:{" "}
-                {liveShift.end
-                  ?.toDate()
-                  .toLocaleTimeString("pl-PL", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-              </Text>
-              <TouchableOpacity
-                style={styles.liveBtn}
-                onPress={() =>
-                  navigation.navigate("ShiftDetail", { shiftId: liveShift.id })
-                }
-              >
-                <Text style={{ color: "white", fontWeight: "bold" }}>
-                  Otwórz wizytę
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryTitle}>
-              📊 Dzisiaj ({new Date().toLocaleDateString("pl-PL")})
+      {liveShift && (
+        <View style={styles.liveCard}>
+          <Text style={styles.liveTitle}>🔴 TERAZ U PODOPIECZNEGO</Text>
+          <Text style={styles.liveText}>
+            Opiekun:{" "}
+            <Text style={{ fontWeight: "bold" }}>
+              {caregiversMap[liveShift.caregiverId] || "Nieznany"}
             </Text>
-            {dailyStats.hasData ? (
-              <>
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryItem}>
-                    💧 {dailyStats.drinks} szkl.
-                  </Text>
-                  <Text style={styles.summaryItem}>
-                    🚽{" "}
-                    {dailyStats.hasUrine || dailyStats.hasBowel ? "Była" : "-"}
-                  </Text>
-                </View>
-                <Text style={styles.summaryMood}>
-                  🧠 Nastrój: {dailyStats.mood || "Brak danych"}
-                </Text>
-              </>
-            ) : (
-              <View style={styles.tutorialBox}>
-                <MaterialCommunityIcons
-                  name="information-outline"
-                  size={24}
-                  color={theme.colors.textSecondary}
-                />
-                <Text style={styles.tutorialText}>Brak danych z dzisiaj.</Text>
-              </View>
-            )}
-          </View>
-
-          <Text style={styles.sectionLabel}>Akcje</Text>
-          <View style={styles.actionGrid}>
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() =>
-                navigation.navigate("MedicalHistory", { patientId: patient.id })
-              }
-            >
-              <View style={[styles.iconCircle, { backgroundColor: "#FFF3E0" }]}>
-                <MaterialCommunityIcons
-                  name="file-document-outline"
-                  size={24}
-                  color="#F57C00"
-                />
-              </View>
-              <Text style={styles.actionBtnText}>Kartoteka</Text>
-            </TouchableOpacity>
-
-            {isOwner && (
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() =>
-                  navigation.navigate("ScheduleVisit", {
-                    patientId: patient.id,
-                    patientName: patient.name,
-                  })
-                }
-              >
-                <View
-                  style={[styles.iconCircle, { backgroundColor: "#E3F2FD" }]}
-                >
-                  <MaterialCommunityIcons
-                    name="calendar-plus"
-                    size={24}
-                    color="#1976D2"
-                  />
-                </View>
-                <Text style={styles.actionBtnText}>Zaplanuj</Text>
-              </TouchableOpacity>
-            )}
-
-            {isOwner && (
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() =>
-                  navigation.navigate("ManageCaregivers", {
-                    patientId: patient.id,
-                  })
-                }
-              >
-                <View
-                  style={[styles.iconCircle, { backgroundColor: "#E8F5E9" }]}
-                >
-                  <MaterialCommunityIcons
-                    name="account-group"
-                    size={24}
-                    color="#388E3C"
-                  />
-                </View>
-                <Text style={styles.actionBtnText}>Opiekunowie</Text>
-              </TouchableOpacity>
-            )}
-
-            {isOwner && (
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() =>
-                  navigation.navigate("EditPatient", { patientId: patient.id })
-                }
-              >
-                <View
-                  style={[styles.iconCircle, { backgroundColor: "#F3E5F5" }]}
-                >
-                  <MaterialCommunityIcons
-                    name="cog-outline"
-                    size={24}
-                    color="#7B1FA2"
-                  />
-                </View>
-                <Text style={styles.actionBtnText}>Edytuj Profil</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </>
+          </Text>
+          <Text style={styles.liveSubText}>
+            Planowo do:{" "}
+            {liveShift.end
+              ?.toDate()
+              .toLocaleTimeString("pl-PL", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+          </Text>
+          <TouchableOpacity
+            style={styles.liveBtn}
+            onPress={() =>
+              navigation.navigate("ShiftDetail", { shiftId: liveShift.id })
+            }
+          >
+            <Text style={{ color: "white", fontWeight: "bold" }}>
+              Otwórz wizytę
+            </Text>
+          </TouchableOpacity>
+        </View>
       )}
+
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>
+          📊 Dzisiaj ({new Date().toLocaleDateString("pl-PL")})
+        </Text>
+        {dailyStats.hasData ? (
+          <>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryItem}>
+                💧 {dailyStats.drinks} szkl.
+              </Text>
+              <Text style={styles.summaryItem}>
+                🚽 {dailyStats.hasUrine || dailyStats.hasBowel ? "Była" : "-"}
+              </Text>
+            </View>
+            <Text style={styles.summaryMood}>
+              🧠 Nastrój: {dailyStats.mood || "Brak danych"}
+            </Text>
+          </>
+        ) : (
+          <View style={styles.tutorialBox}>
+            <MaterialCommunityIcons
+              name="information-outline"
+              size={24}
+              color={theme.colors.textSecondary}
+            />
+            <Text style={styles.tutorialText}>Brak danych z dzisiaj.</Text>
+          </View>
+        )}
+      </View>
+
+      <Text style={styles.sectionLabel}>Akcje</Text>
+      <View style={styles.actionGrid}>
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={() =>
+            navigation.navigate("ScheduleVisit", {
+              patientId: patient.id,
+              patientName: patient.name,
+            })
+          }
+        >
+          <View style={[styles.iconCircle, { backgroundColor: "#E3F2FD" }]}>
+            <MaterialCommunityIcons
+              name="calendar-plus"
+              size={24}
+              color="#1976D2"
+            />
+          </View>
+          <Text style={styles.actionBtnText}>Zaplanuj</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={() =>
+            navigation.navigate("ManageCaregivers", { patientId: patient.id })
+          }
+        >
+          <View style={[styles.iconCircle, { backgroundColor: "#E8F5E9" }]}>
+            <MaterialCommunityIcons
+              name="account-group"
+              size={24}
+              color="#388E3C"
+            />
+          </View>
+          <Text style={styles.actionBtnText}>Opiekunowie</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={() =>
+            navigation.navigate("MedicalHistory", { patientId: patient.id })
+          }
+        >
+          <View style={[styles.iconCircle, { backgroundColor: "#FFF3E0" }]}>
+            <MaterialCommunityIcons
+              name="file-document-outline"
+              size={24}
+              color="#F57C00"
+            />
+          </View>
+          <Text style={styles.actionBtnText}>Kartoteka</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={() =>
+            navigation.navigate("EditPatient", { patientId: patient.id })
+          }
+        >
+          <View style={[styles.iconCircle, { backgroundColor: "#F3E5F5" }]}>
+            <MaterialCommunityIcons
+              name="cog-outline"
+              size={24}
+              color="#7B1FA2"
+            />
+          </View>
+          <Text style={styles.actionBtnText}>Edytuj Profil</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 
-  const renderCalendarView = () => {
+  // =====================================================================
+  // 3. WIDOK SZEFA - KALENDARZ
+  // =====================================================================
+  const renderOwnerCalendar = () => {
     const markedDates: any = {};
     allShifts.forEach((shift) => {
       const dateKey = shift.start.toDate().toISOString().split("T")[0];
@@ -715,7 +706,7 @@ const PatientDetailScreen = ({
                 onPress={() => {
                   if (isCompleted)
                     navigation.navigate("ReportDetail", { shiftId: item.id });
-                  else navigation.navigate("ShiftDetail", { shiftId: item.id });
+                  else navigation.navigate("EditVisit", { shiftId: item.id });
                 }}
               >
                 <View style={{ flex: 1 }}>
@@ -757,16 +748,58 @@ const PatientDetailScreen = ({
     );
   };
 
+  const TabSelector = () => (
+    <View style={styles.tabContainer}>
+      <TouchableOpacity
+        style={[
+          styles.tabButton,
+          activeTab === "dashboard" && styles.tabButtonActive,
+        ]}
+        onPress={() => setActiveTab("dashboard")}
+      >
+        <Text
+          style={[
+            styles.tabText,
+            activeTab === "dashboard" && styles.tabTextActive,
+          ]}
+        >
+          🏠 Pulpit
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[
+          styles.tabButton,
+          activeTab === "calendar" && styles.tabButtonActive,
+        ]}
+        onPress={() => setActiveTab("calendar")}
+      >
+        <Text
+          style={[
+            styles.tabText,
+            activeTab === "calendar" && styles.tabTextActive,
+          ]}
+        >
+          📅 Harmonogram
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
-      {isOwner && <TabSelector />}
-      <View style={styles.contentContainer}>
-        {!isOwner
-          ? renderDashboard()
-          : activeTab === "dashboard"
-          ? renderDashboard()
-          : renderCalendarView()}
-      </View>
+      {/* GŁÓWNY RETURN - LOGIKA PRZEŁĄCZANIA WIDOKÓW */}
+      {isOwner ? (
+        <>
+          <TabSelector />
+          <View style={styles.contentContainer}>
+            {activeTab === "dashboard"
+              ? renderOwnerDashboard()
+              : renderOwnerCalendar()}
+          </View>
+        </>
+      ) : (
+        renderCaregiverView()
+      )}
     </SafeAreaView>
   );
 };
@@ -777,7 +810,7 @@ const styles = StyleSheet.create({
   contentContainer: { flex: 1 },
   scrollContent: { padding: 20 },
 
-  // STYLES FOR CAREGIVER VIEW (SIMPLE)
+  // CAREGIVER STYLES
   simpleProfileCard: {
     backgroundColor: "white",
     borderRadius: 20,
@@ -819,18 +852,22 @@ const styles = StyleSheet.create({
   nextShiftCard: {
     backgroundColor: "white",
     borderRadius: 15,
-    padding: 15,
+    padding: 20,
     marginBottom: 25,
-    elevation: 2,
-    borderLeftWidth: 5,
+    elevation: 4,
+    borderLeftWidth: 6,
     borderLeftColor: theme.colors.primary,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
   },
   sectionTitleSmall: {
-    fontSize: 12,
-    color: "#888",
+    fontSize: 13,
+    color: "#555",
     fontWeight: "bold",
     textTransform: "uppercase",
     marginBottom: 10,
+    letterSpacing: 1,
   },
   nextShiftRow: {
     flexDirection: "row",
@@ -839,14 +876,34 @@ const styles = StyleSheet.create({
   },
   nextShiftDate: { fontSize: 18, fontWeight: "bold", color: "#333" },
   nextShiftTime: { fontSize: 16, color: "#555", marginTop: 2 },
+  heroStatusTitle: { fontWeight: "bold", fontSize: 14 },
+
+  openBtn: {
+    marginTop: 15,
+    paddingVertical: 10,
+    borderRadius: 8,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 5,
+  },
+  openBtnText: { color: "white", fontWeight: "bold", letterSpacing: 1 },
   openShiftBadge: {
     alignSelf: "flex-start",
-    backgroundColor: theme.colors.primary,
+    backgroundColor: "#f0f0f0",
     paddingVertical: 5,
     paddingHorizontal: 10,
     borderRadius: 10,
   },
-  openShiftBadgeText: { color: "white", fontSize: 12, fontWeight: "bold" },
+  openShiftBadgeText: { color: "#555", fontSize: 12, fontWeight: "600" },
+
+  cardTimeBig: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#333",
+    marginVertical: 5,
+  },
+  cardDateBig: { fontSize: 16, color: "#666", marginBottom: 15 },
 
   listHeaderSimple: {
     fontSize: 18,
@@ -858,8 +915,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "white",
-    padding: 10,
-    borderRadius: 10,
+    padding: 12,
+    borderRadius: 12,
     marginBottom: 10,
     elevation: 1,
   },
@@ -872,8 +929,14 @@ const styles = StyleSheet.create({
   },
   dayNum: { fontSize: 16, fontWeight: "bold", color: "#333" },
   monStr: { fontSize: 12, color: "#666", textTransform: "uppercase" },
-  simpleShiftTime: { fontSize: 15, fontWeight: "600", color: "#333" },
+  simpleShiftTime: { fontSize: 16, fontWeight: "600", color: "#333" },
   simpleShiftCaregiver: { fontSize: 13, color: "#666", marginTop: 2 },
+  divider: {
+    width: "100%",
+    height: 1,
+    backgroundColor: "#eee",
+    marginVertical: 10,
+  },
 
   // OWNER STYLES
   tabContainer: {
@@ -941,57 +1004,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 2,
   },
-  onboardingContainer: { marginTop: 10 },
-  onboardingTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#333",
-    marginBottom: 5,
-    textAlign: "center",
-  },
-  onboardingSub: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 20,
-    textAlign: "center",
-  },
-  stepCard: {
-    flexDirection: "row",
-    backgroundColor: "white",
-    padding: 15,
-    borderRadius: 15,
-    marginBottom: 15,
-    elevation: 2,
-  },
-  stepNumber: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: theme.colors.primary,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 15,
-    marginTop: 2,
-  },
-  stepNumText: { color: "white", fontWeight: "bold" },
-  stepTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#333",
-    marginBottom: 4,
-  },
-  stepDesc: { fontSize: 13, color: "#666", marginBottom: 10, lineHeight: 18 },
-  stepActionBtn: {
-    flexDirection: "row",
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    alignSelf: "flex-start",
-    alignItems: "center",
-    gap: 5,
-  },
-  stepBtnText: { color: "white", fontWeight: "bold", fontSize: 13 },
+
   liveCard: {
     width: "100%",
     backgroundColor: "#E8F5E9",
