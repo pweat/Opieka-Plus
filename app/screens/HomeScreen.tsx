@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { auth, db } from "../../firebaseConfig";
 import { theme } from "../../theme";
-import { signOut } from "firebase/auth";
+// Usunęliśmy import signOut, bo teraz wylogowanie jest w profilu
 import {
   collection,
   query,
@@ -19,7 +19,6 @@ import {
   getDocs,
   doc,
   getDoc,
-  Timestamp,
 } from "firebase/firestore";
 import { useIsFocused } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -102,8 +101,6 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     setLoading(false);
   };
 
-  const handleLogout = () => signOut(auth);
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -125,10 +122,15 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
           </Text>
           !
         </Text>
-        <TouchableOpacity onPress={handleLogout}>
+
+        {/* ZMIANA: Zamiast wylogowania, ikona profilu */}
+        <TouchableOpacity
+          style={styles.profileBtn} // To jest ten styl, którego brakowało
+          onPress={() => navigation.navigate("UserProfile")}
+        >
           <MaterialCommunityIcons
-            name="logout"
-            size={24}
+            name="account-circle"
+            size={32}
             color={theme.colors.primary}
           />
         </TouchableOpacity>
@@ -146,9 +148,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
         />
       )}
 
-      {/* FAB - Przycisk dodawania (POPRAWIONY WARUNEK) */}
-      {/* Wyświetlamy go teraz zawsze, gdy jest przynajmniej 1 pacjent. 
-          Gdy jest 0, OwnerDashboard wyświetla swój własny duży przycisk na środku. */}
+      {/* FAB - Przycisk dodawania */}
       {userProfile?.role === "opiekun_glowny" && patients.length > 0 && (
         <TouchableOpacity
           style={styles.fab}
@@ -183,6 +183,13 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   welcomeText: { color: theme.colors.text, fontSize: 16, flex: 1 },
+
+  // TUTAJ DODAŁEM BRAKUJĄCY STYL
+  profileBtn: {
+    padding: 5,
+    marginLeft: 10,
+  },
+
   fab: {
     position: "absolute",
     right: theme.spacing.large,
@@ -198,7 +205,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 6,
-    zIndex: 1000, // Upewniamy się, że jest na wierzchu
+    zIndex: 1000,
   },
 });
 

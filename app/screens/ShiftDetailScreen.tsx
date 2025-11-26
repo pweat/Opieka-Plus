@@ -11,24 +11,21 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { db } from "../../firebaseConfig";
+import { db, auth } from "../../firebaseConfig";
 import { theme } from "../../theme";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { useAlert } from "../context/AlertContext";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 // === INTERFEJSY ===
-
 interface Task {
   description: string;
   isDone: boolean;
 }
-
 interface DrinkLog {
   type: string;
   amount: number;
 }
-
 interface FoodLog {
   time: string;
   description: string;
@@ -37,32 +34,24 @@ interface FoodLog {
 interface ShiftDetails {
   id: string;
   patientName: string;
+  ownerId?: string;
+  caregiverId?: string;
   tasks: Task[];
   notes?: string;
   status?: string;
-
-  // Nastroje
   moods?: string[];
   moodNote?: string;
-
-  // Stan fizyczny
   strength?: string;
   cognition?: number;
   energy?: "low" | "medium" | "high";
-
-  // Toaleta
   toiletUrine?: boolean;
   toiletBowel?: boolean;
-
-  // Dzienniki
   sleepLogs?: string[];
   intakeLogs?: DrinkLog[];
   foodLogs?: FoodLog[];
-
   appetite?: "bad" | "normal" | "good";
 }
 
-// Domyślna lista nastrojów
 const DEFAULT_MOOD_OPTIONS = [
   "Zadowolona",
   "Smutna",
@@ -84,43 +73,44 @@ const ShiftDetailScreen = ({
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [shift, setShift] = useState<ShiftDetails | null>(null);
+  const [userRole, setUserRole] = useState<"opiekun_glowny" | "opiekun" | null>(
+    null
+  );
   const { showAlert } = useAlert();
 
-  // Stany formularzy
+  // Formularze
   const [notes, setNotes] = useState("");
   const [moodNote, setMoodNote] = useState("");
-
-  // Drzemki i Płyny
   const [newNap, setNewNap] = useState("");
   const [drinkType, setDrinkType] = useState("");
-
-  // Jedzenie
   const [newFoodDesc, setNewFoodDesc] = useState("");
   const [newFoodTime, setNewFoodTime] = useState("");
-
-  // Nastroje (Dynamiczna lista)
   const [availableMoods, setAvailableMoods] =
     useState<string[]>(DEFAULT_MOOD_OPTIONS);
   const [customMood, setCustomMood] = useState("");
 
   const shiftDocRef = doc(db, "shifts", shiftId);
+  const currentUser = auth.currentUser;
 
   useEffect(() => {
-    const fetchShiftDetails = async () => {
+    const fetchData = async () => {
       setLoading(true);
       try {
+        let role: any = null;
+        if (currentUser) {
+          const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+          if (userDoc.exists()) {
+            role = userDoc.data().role;
+            setUserRole(role);
+          }
+        }
+
         const shiftDoc = await getDoc(shiftDocRef);
         if (shiftDoc.exists()) {
           const data = shiftDoc.data();
+          // USUNIĘTO AUTO-START WIZYTY!
 
-          if (data.status === "scheduled") {
-            await updateDoc(shiftDocRef, { status: "in_progress" });
-            data.status = "in_progress";
-          }
-
-          // Łączymy domyślne nastroje z tymi zapisanymi w bazie (jeśli są jakieś niestandardowe)
           const savedMoods = data.moods || [];
-          // Używamy Set, żeby uniknąć duplikatów
           const mergedMoods = Array.from(
             new Set([...DEFAULT_MOOD_OPTIONS, ...savedMoods])
           );
@@ -129,6 +119,8 @@ const ShiftDetailScreen = ({
           setShift({
             id: shiftDoc.id,
             patientName: data.patientName,
+            ownerId: data.ownerId,
+            caregiverId: data.caregiverId,
             tasks: data.tasks || [],
             status: data.status,
             moods: savedMoods,
@@ -157,11 +149,23 @@ const ShiftDetailScreen = ({
       }
       setLoading(false);
     };
-    fetchShiftDetails();
+    fetchData();
   }, [shiftId]);
 
-  // === FUNKCJE AKTUALIZACJI ===
+  // === ROZPOCZYNANIE WIZYTY ===
+  const handleStartShift = async () => {
+    setIsSaving(true);
+    try {
+      await updateDoc(shiftDocRef, { status: "in_progress" });
+      setShift((prev) => (prev ? { ...prev, status: "in_progress" } : null));
+      showAlert("Wizyta rozpoczęta", "Możesz teraz uzupełniać raport.");
+    } catch (e) {
+      showAlert("Błąd", "Nie udało się rozpocząć wizyty.");
+    }
+    setIsSaving(false);
+  };
 
+  // === HELPERY DO EDYCJI ===
   const updateField = async (field: keyof ShiftDetails, value: any) => {
     if (!shift) return;
     setShift((prev) => ({ ...prev!, [field]: value }));
@@ -177,34 +181,25 @@ const ShiftDetailScreen = ({
     updateField("tasks", newTasks);
   };
 
-  // --- NASTROJE ---
+  // ... (Reszta funkcji pomocniczych bez zmian: toggleMood, addDrink, addFood itd.)
+  // SKROCONO DLA CZYTELNOŚCI - WKLEJ TUTAJ FUNKCJE toggleMood, addNap, removeNap, addDrink, removeDrink, addFood, removeFood, saveTextInputs Z POPRZEDNIEGO PLIKU
+  // Poniżej wklejam je ponownie dla pewności:
+
   const toggleMood = (mood: string) => {
     if (!shift) return;
     let newMoods = shift.moods || [];
-    if (newMoods.includes(mood)) {
-      newMoods = newMoods.filter((m) => m !== mood);
-    } else {
-      newMoods = [...newMoods, mood];
-    }
+    if (newMoods.includes(mood)) newMoods = newMoods.filter((m) => m !== mood);
+    else newMoods = [...newMoods, mood];
     updateField("moods", newMoods);
   };
-
   const addCustomMood = () => {
     if (customMood.trim() === "") return;
     const moodToAdd = customMood.trim();
-
-    // Dodaj do listy widocznych opcji (jeśli jeszcze nie ma)
-    if (!availableMoods.includes(moodToAdd)) {
+    if (!availableMoods.includes(moodToAdd))
       setAvailableMoods((prev) => [...prev, moodToAdd]);
-    }
-
-    // Automatycznie zaznacz ten nowy nastrój
     toggleMood(moodToAdd);
-
     setCustomMood("");
   };
-
-  // --- DRZEMKI ---
   const addNap = () => {
     if (newNap.trim() === "") return;
     const updatedNaps = [...(shift?.sleepLogs || []), newNap.trim()];
@@ -215,8 +210,6 @@ const ShiftDetailScreen = ({
     const updatedNaps = (shift?.sleepLogs || []).filter((_, i) => i !== index);
     updateField("sleepLogs", updatedNaps);
   };
-
-  // --- NAWODNIENIE ---
   const addDrink = (amount: number) => {
     const type = drinkType.trim() || "Woda";
     const newEntry = { type, amount };
@@ -229,13 +222,9 @@ const ShiftDetailScreen = ({
     );
     updateField("intakeLogs", updatedDrinks);
   };
-
-  // --- JEDZENIE ---
   const addFood = () => {
-    if (newFoodDesc.trim() === "") {
-      showAlert("Uwaga", "Wpisz co zostało zjedzone.");
-      return;
-    }
+    if (newFoodDesc.trim() === "")
+      return showAlert("Uwaga", "Wpisz co zostało zjedzone.");
     const time =
       newFoodTime.trim() ||
       new Date().toLocaleTimeString("pl-PL", {
@@ -244,24 +233,18 @@ const ShiftDetailScreen = ({
       });
     const newEntry: FoodLog = { time, description: newFoodDesc.trim() };
     const updatedFood = [...(shift?.foodLogs || []), newEntry];
-
     updateField("foodLogs", updatedFood);
     setNewFoodDesc("");
     setNewFoodTime("");
   };
-
   const removeFood = (index: number) => {
     const updatedFood = (shift?.foodLogs || []).filter((_, i) => i !== index);
     updateField("foodLogs", updatedFood);
   };
-
-  // Zapis pól tekstowych (onBlur)
   const saveTextInputs = async () => {
     try {
       await updateDoc(shiftDocRef, { notes, moodNote });
-    } catch (e) {
-      console.log("Błąd zapisu");
-    }
+    } catch (e) {}
   };
 
   const handleFinishShift = () => {
@@ -287,6 +270,30 @@ const ShiftDetailScreen = ({
     ]);
   };
 
+  const handleDeleteShift = () => {
+    showAlert(
+      "Usuń wizytę",
+      "Czy na pewno chcesz usunąć tę wizytę? To jest nieodwracalne.",
+      [
+        { text: "Anuluj", style: "cancel" },
+        {
+          text: "Usuń",
+          style: "destructive",
+          onPress: async () => {
+            setIsSaving(true);
+            try {
+              await deleteDoc(shiftDocRef);
+              navigation.goBack();
+            } catch (error) {
+              setIsSaving(false);
+              showAlert("Błąd", "Nie udało się usunąć.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (loading || isSaving)
     return (
       <ActivityIndicator
@@ -296,6 +303,48 @@ const ShiftDetailScreen = ({
       />
     );
   if (!shift) return null;
+
+  const isOwner = userRole === "opiekun_glowny";
+  const isScheduled = shift.status === "scheduled";
+
+  // === WIDOK STARTOWY DLA OPIEKUNKI (BLOKADA) ===
+  if (!isOwner && isScheduled) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <MaterialCommunityIcons
+          name="calendar-clock"
+          size={80}
+          color={theme.colors.primary}
+        />
+        <Text style={styles.startTitle}>Wizyta Zaplanowana</Text>
+        <Text style={styles.startSub}>Pacjent: {shift.patientName}</Text>
+
+        <View style={styles.startCard}>
+          <Text style={styles.startLabel}>Zadania do wykonania:</Text>
+          {shift.tasks.length > 0 ? (
+            shift.tasks.map((t, i) => (
+              <Text key={i} style={styles.startTaskItem}>
+                • {t.description}
+              </Text>
+            ))
+          ) : (
+            <Text style={{ color: "#888" }}>Brak zadań</Text>
+          )}
+        </View>
+
+        <TouchableOpacity style={styles.startButton} onPress={handleStartShift}>
+          <Text style={styles.startButtonText}>ROZPOCZNIJ WIZYTĘ</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={{ marginTop: 20 }}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={{ color: "#666" }}>Wróć</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -308,6 +357,20 @@ const ShiftDetailScreen = ({
         keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.headerName}>{shift.patientName}</Text>
+
+        {/* BANER DLA SZEFA (Status) */}
+        {isOwner && isScheduled && (
+          <View style={styles.infoBanner}>
+            <MaterialCommunityIcons
+              name="eye-outline"
+              size={20}
+              color="#1565C0"
+            />
+            <Text style={styles.infoText}>
+              Tryb podglądu. Oczekiwanie na rozpoczęcie przez opiekuna.
+            </Text>
+          </View>
+        )}
 
         {/* --- ZADANIA --- */}
         <View style={styles.section}>
@@ -367,51 +430,38 @@ const ShiftDetailScreen = ({
               </TouchableOpacity>
             ))}
           </View>
-
           <Text style={styles.label}>Kojarzenie (1-10):</Text>
           <View style={styles.gridContainer}>
-            <View style={styles.gridRow}>
-              {[1, 2, 3, 4, 5].map((num) => (
-                <TouchableOpacity
-                  key={num}
-                  style={[
-                    styles.numberBtn,
-                    shift.cognition === num && styles.numberBtnActive,
-                  ]}
-                  onPress={() => updateField("cognition", num)}
-                >
-                  <Text
-                    style={[
-                      styles.numberText,
-                      shift.cognition === num && styles.numberTextActive,
-                    ]}
-                  >
-                    {num}
-                  </Text>
-                </TouchableOpacity>
+            {[...Array(10).keys()]
+              .map((i) => i + 1)
+              .reduce((rows: any[], key, index) => {
+                if (index % 5 === 0) rows.push([]);
+                rows[rows.length - 1].push(key);
+                return rows;
+              }, [])
+              .map((row: number[], rowIndex: number) => (
+                <View key={rowIndex} style={styles.gridRow}>
+                  {row.map((num) => (
+                    <TouchableOpacity
+                      key={num}
+                      style={[
+                        styles.numberBtn,
+                        shift.cognition === num && styles.numberBtnActive,
+                      ]}
+                      onPress={() => updateField("cognition", num)}
+                    >
+                      <Text
+                        style={[
+                          styles.numberText,
+                          shift.cognition === num && styles.numberTextActive,
+                        ]}
+                      >
+                        {num}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               ))}
-            </View>
-            <View style={styles.gridRow}>
-              {[6, 7, 8, 9, 10].map((num) => (
-                <TouchableOpacity
-                  key={num}
-                  style={[
-                    styles.numberBtn,
-                    shift.cognition === num && styles.numberBtnActive,
-                  ]}
-                  onPress={() => updateField("cognition", num)}
-                >
-                  <Text
-                    style={[
-                      styles.numberText,
-                      shift.cognition === num && styles.numberTextActive,
-                    ]}
-                  >
-                    {num}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
           </View>
         </View>
 
@@ -454,7 +504,6 @@ const ShiftDetailScreen = ({
               </Text>
             </TouchableOpacity>
           </View>
-
           <Text style={styles.label}>Drzemki:</Text>
           <View style={styles.addItemRow}>
             <TextInput
@@ -467,7 +516,6 @@ const ShiftDetailScreen = ({
               <MaterialCommunityIcons name="plus" size={24} color="white" />
             </TouchableOpacity>
           </View>
-
           <View style={styles.listContainer}>
             {shift.sleepLogs?.map((nap, i) => (
               <View key={i} style={styles.cardItem}>
@@ -492,50 +540,32 @@ const ShiftDetailScreen = ({
                 </TouchableOpacity>
               </View>
             ))}
-            {(!shift.sleepLogs || shift.sleepLogs.length === 0) && (
-              <Text style={styles.emptyListText}>Brak drzemek.</Text>
-            )}
           </View>
         </View>
 
         {/* --- JEDZENIE I PICIE --- */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>🍽️ Jedzenie i Picie</Text>
-
           <Text style={styles.label}>Apetyt:</Text>
           <View style={styles.appetiteRow}>
-            <TouchableOpacity
-              style={[
-                styles.emojiBtn,
-                shift.appetite === "bad" && styles.emojiBtnActive,
-              ]}
-              onPress={() => updateField("appetite", "bad")}
-            >
-              <Text style={styles.emoji}>🤢</Text>
-              <Text style={styles.emojiLabel}>Słaby</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.emojiBtn,
-                shift.appetite === "normal" && styles.emojiBtnActive,
-              ]}
-              onPress={() => updateField("appetite", "normal")}
-            >
-              <Text style={styles.emoji}>😐</Text>
-              <Text style={styles.emojiLabel}>Średni</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.emojiBtn,
-                shift.appetite === "good" && styles.emojiBtnActive,
-              ]}
-              onPress={() => updateField("appetite", "good")}
-            >
-              <Text style={styles.emoji}>😋</Text>
-              <Text style={styles.emojiLabel}>Dobry</Text>
-            </TouchableOpacity>
+            {[
+              { k: "bad", i: "🤢", l: "Słaby" },
+              { k: "normal", i: "😐", l: "Średni" },
+              { k: "good", i: "😋", l: "Dobry" },
+            ].map((ap: any) => (
+              <TouchableOpacity
+                key={ap.k}
+                style={[
+                  styles.emojiBtn,
+                  shift.appetite === ap.k && styles.emojiBtnActive,
+                ]}
+                onPress={() => updateField("appetite", ap.k)}
+              >
+                <Text style={styles.emoji}>{ap.i}</Text>
+                <Text style={styles.emojiLabel}>{ap.l}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
-
           <Text style={styles.label}>Posiłki:</Text>
           <View style={styles.addItemRow}>
             <TextInput
@@ -543,7 +573,6 @@ const ShiftDetailScreen = ({
               placeholder="Godz."
               value={newFoodTime}
               onChangeText={setNewFoodTime}
-              keyboardType="numbers-and-punctuation"
             />
             <TextInput
               style={[styles.inputSmall, { flex: 1 }]}
@@ -555,7 +584,6 @@ const ShiftDetailScreen = ({
               <MaterialCommunityIcons name="plus" size={24} color="white" />
             </TouchableOpacity>
           </View>
-
           <View style={styles.listContainer}>
             {shift.foodLogs?.map((food, i) => (
               <View key={i} style={styles.cardItem}>
@@ -579,11 +607,7 @@ const ShiftDetailScreen = ({
                 </TouchableOpacity>
               </View>
             ))}
-            {(!shift.foodLogs || shift.foodLogs.length === 0) && (
-              <Text style={styles.emptyListText}>Nie dodano posiłków.</Text>
-            )}
           </View>
-
           <Text style={styles.label}>Nawodnienie (dodaj ilość):</Text>
           <View
             style={{
@@ -600,28 +624,17 @@ const ShiftDetailScreen = ({
               onChangeText={setDrinkType}
             />
           </View>
-
           <View style={styles.rowCenter}>
-            <TouchableOpacity
-              style={styles.drinkBtn}
-              onPress={() => addDrink(0.25)}
-            >
-              <Text style={styles.drinkBtnText}>+ 1/4 szkl.</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.drinkBtn}
-              onPress={() => addDrink(0.5)}
-            >
-              <Text style={styles.drinkBtnText}>+ 1/2 szkl.</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.drinkBtn}
-              onPress={() => addDrink(1.0)}
-            >
-              <Text style={styles.drinkBtnText}>+ 1 szkl.</Text>
-            </TouchableOpacity>
+            {[0.25, 0.5, 1.0].map((amt) => (
+              <TouchableOpacity
+                key={amt}
+                style={styles.drinkBtn}
+                onPress={() => addDrink(amt)}
+              >
+                <Text style={styles.drinkBtnText}>+ {amt} szkl.</Text>
+              </TouchableOpacity>
+            ))}
           </View>
-
           <View style={styles.listContainer}>
             {shift.intakeLogs?.map((log, i) => (
               <View key={i} style={styles.cardItem}>
@@ -649,17 +662,12 @@ const ShiftDetailScreen = ({
                 </TouchableOpacity>
               </View>
             ))}
-            {(!shift.intakeLogs || shift.intakeLogs.length === 0) && (
-              <Text style={styles.emptyListText}>Brak wpisów.</Text>
-            )}
           </View>
         </View>
 
         {/* --- NASTRÓJ --- */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>🧠 Nastrój</Text>
-
-          {/* WŁASNY NASTRÓJ - INPUT */}
           <View style={styles.addItemRow}>
             <TextInput
               style={[styles.inputSmall, { flex: 1 }]}
@@ -674,7 +682,6 @@ const ShiftDetailScreen = ({
               <MaterialCommunityIcons name="plus" size={24} color="white" />
             </TouchableOpacity>
           </View>
-
           <View style={styles.tagsContainer}>
             {availableMoods.map((m) => (
               <TouchableOpacity
@@ -696,10 +703,9 @@ const ShiftDetailScreen = ({
               </TouchableOpacity>
             ))}
           </View>
-
           <TextInput
             style={[styles.inputArea, { marginTop: 15, minHeight: 60 }]}
-            placeholder="Dodatkowy opis nastroju (opcjonalne)..."
+            placeholder="Dodatkowy opis nastroju..."
             multiline
             value={moodNote}
             onChangeText={setMoodNote}
@@ -712,7 +718,7 @@ const ShiftDetailScreen = ({
           <Text style={styles.sectionTitle}>📝 Dodatkowe uwagi</Text>
           <TextInput
             style={styles.inputArea}
-            placeholder="Inne ważne informacje, co się działo..."
+            placeholder="Inne ważne informacje..."
             multiline
             value={notes}
             onChangeText={setNotes}
@@ -721,9 +727,33 @@ const ShiftDetailScreen = ({
         </View>
 
         <View style={{ height: 20 }} />
-        <TouchableOpacity style={styles.finishBtn} onPress={handleFinishShift}>
-          <Text style={styles.finishBtnText}>✅ ZAKOŃCZ WIZYTĘ</Text>
-        </TouchableOpacity>
+
+        {/* PRZYCISK KOŃCZENIA (TYLKO DLA OPIEKUNA) */}
+        {!isOwner && (
+          <TouchableOpacity
+            style={styles.finishBtn}
+            onPress={handleFinishShift}
+          >
+            <Text style={styles.finishBtnText}>✅ ZAKOŃCZ WIZYTĘ</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* PRZYCISK USUWANIA (TYLKO DLA SZEFA) */}
+        {isOwner && (
+          <TouchableOpacity
+            style={styles.deleteBtn}
+            onPress={handleDeleteShift}
+          >
+            <MaterialCommunityIcons
+              name="trash-can-outline"
+              size={20}
+              color="#ff5252"
+              style={{ marginRight: 5 }}
+            />
+            <Text style={styles.deleteBtnText}>Usuń wizytę</Text>
+          </TouchableOpacity>
+        )}
+        <View style={{ height: 30 }} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -739,6 +769,50 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: theme.colors.background,
   },
+  centerContent: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 30,
+  },
+
+  // START SCREEN STYLES
+  startTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginTop: 20,
+    marginBottom: 5,
+  },
+  startSub: { fontSize: 16, color: "#666", marginBottom: 30 },
+  startCard: {
+    backgroundColor: "white",
+    width: "100%",
+    padding: 20,
+    borderRadius: 12,
+    elevation: 2,
+    marginBottom: 30,
+  },
+  startLabel: {
+    fontWeight: "bold",
+    marginBottom: 10,
+    color: theme.colors.primary,
+  },
+  startTaskItem: { fontSize: 15, color: "#444", marginBottom: 5 },
+  startButton: {
+    backgroundColor: "#4CAF50",
+    width: "100%",
+    padding: 18,
+    borderRadius: 12,
+    alignItems: "center",
+    elevation: 5,
+  },
+  startButtonText: {
+    color: "white",
+    fontWeight: "bold",
+    fontSize: 18,
+    letterSpacing: 1,
+  },
+
   headerName: {
     fontSize: 26,
     fontWeight: "bold",
@@ -769,8 +843,17 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 8,
   },
-
-  // ZADANIA
+  infoBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#E3F2FD",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: "#1565C0",
+  },
+  infoText: { marginLeft: 10, color: "#1565C0", fontSize: 13, flex: 1 },
   taskRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -792,8 +875,6 @@ const styles = StyleSheet.create({
   checkMark: { color: "white", fontSize: 14, fontWeight: "bold" },
   taskText: { fontSize: 16, color: theme.colors.text, flex: 1 },
   emptyText: { color: "#999", fontStyle: "italic" },
-
-  // SEGMENTY I BUTTONY
   segmentRow: {
     flexDirection: "row",
     backgroundColor: "#f0f0f0",
@@ -809,8 +890,6 @@ const styles = StyleSheet.create({
   segmentBtnActive: { backgroundColor: "white", elevation: 2 },
   segmentText: { color: "#666", fontWeight: "500" },
   segmentTextActive: { color: theme.colors.primary, fontWeight: "bold" },
-
-  // GRID LICZBOWY
   gridContainer: { marginTop: 5 },
   gridRow: {
     flexDirection: "row",
@@ -828,8 +907,6 @@ const styles = StyleSheet.create({
   numberBtnActive: { backgroundColor: theme.colors.primary },
   numberText: { color: "#666", fontWeight: "bold", fontSize: 16 },
   numberTextActive: { color: "white" },
-
-  // TOALETA DUZE GUZIKI
   rowSpread: { flexDirection: "row", justifyContent: "space-between", gap: 10 },
   bigToggle: {
     flex: 1,
@@ -846,8 +923,6 @@ const styles = StyleSheet.create({
   },
   bigToggleIcon: { fontSize: 24, marginBottom: 5 },
   bigToggleText: { fontWeight: "bold", color: theme.colors.text },
-
-  // INPUTY I FORMULARZE
   inputSmall: {
     backgroundColor: "#f9f9f9",
     borderWidth: 1,
@@ -875,8 +950,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
-  // LISTY / KAFELKI
   listContainer: { marginTop: 5 },
   cardItem: {
     flexDirection: "row",
@@ -900,7 +973,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 5,
   },
-
   timeBadge: {
     backgroundColor: "#E3F2FD",
     paddingHorizontal: 8,
@@ -908,13 +980,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginRight: 5,
   },
-  timeText: {
-    color: "#1976D2",
-    fontWeight: "bold",
-    fontSize: 12,
-  },
-
-  // APETYT
+  timeText: { color: "#1976D2", fontWeight: "bold", fontSize: 12 },
   appetiteRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -932,8 +998,6 @@ const styles = StyleSheet.create({
   emojiBtnActive: { backgroundColor: "#eef6fc", borderColor: "#bce0ff" },
   emoji: { fontSize: 30, marginBottom: 5 },
   emojiLabel: { fontSize: 12, color: "#666", fontWeight: "bold" },
-
-  // NAPOJE GUZIKI
   rowCenter: {
     flexDirection: "row",
     justifyContent: "space-around",
@@ -952,8 +1016,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 12,
   },
-
-  // NASTRÓJ TAGI
   tagsContainer: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   tag: {
     backgroundColor: "#f0f0f0",
@@ -965,17 +1027,26 @@ const styles = StyleSheet.create({
   tagActive: { backgroundColor: theme.colors.primary },
   tagText: { color: "#555", fontWeight: "500" },
   tagTextActive: { color: "white", fontWeight: "bold" },
-
-  // FINISH BTN
   finishBtn: {
     backgroundColor: "#2e7d32",
     padding: 16,
     borderRadius: 10,
     alignItems: "center",
-    marginBottom: 30,
+    marginBottom: 15,
     elevation: 4,
   },
   finishBtnText: { color: "white", fontSize: 18, fontWeight: "bold" },
+  deleteBtn: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 15,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#ffcdd2",
+    backgroundColor: "#ffebee",
+  },
+  deleteBtnText: { color: "#ff5252", fontWeight: "bold", fontSize: 16 },
 });
 
 export default ShiftDetailScreen;
