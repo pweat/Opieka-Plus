@@ -13,19 +13,18 @@ import {
 import { auth } from "../../firebaseConfig";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { theme } from "../../theme";
-// 1. Importujemy nasz hook
 import { useAlert } from "../context/AlertContext";
+// Dodajemy ikony
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 const LoginScreen = ({ navigation }: { navigation: any }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  // 2. Pobieramy funkcję showAlert
   const { showAlert } = useAlert();
 
   const handleLogin = async () => {
     if (!email || !password) {
-      // 3. Używamy nowej funkcji zamiast Alert.alert
       showAlert("Błąd", "Proszę podać e-mail i hasło.");
       return;
     }
@@ -45,6 +44,18 @@ const LoginScreen = ({ navigation }: { navigation: any }) => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* PRZYCISK COFANIA */}
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => navigation.goBack()}
+      >
+        <MaterialCommunityIcons
+          name="arrow-left"
+          size={28}
+          color={theme.colors.primary}
+        />
+      </TouchableOpacity>
+
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
@@ -94,6 +105,14 @@ const LoginScreen = ({ navigation }: { navigation: any }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
+  // Styl przycisku cofania
+  backButton: {
+    position: "absolute",
+    top: 50, // Dopasowane do paska statusu
+    left: 20,
+    zIndex: 10,
+    padding: 5,
+  },
   scrollContainer: {
     flexGrow: 1,
     justifyContent: "center",

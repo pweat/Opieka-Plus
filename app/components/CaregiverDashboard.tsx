@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Calendar } from "react-native-calendars";
@@ -41,12 +42,22 @@ const CaregiverDashboard = ({
   navigation,
   onRefresh,
 }: CaregiverDashboardProps) => {
-  const [selectedDate, setSelectedDate] = React.useState(
+  const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
   );
-  const [inviteCode, setInviteCode] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
+  const [inviteCode, setInviteCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  // --- NAPRAWA: Dodano brakujący stan ---
+  const [isJoinModalVisible, setJoinModalVisible] = useState(false);
+
   const { showAlert } = useAlert();
+
+  const handlePullToRefresh = async () => {
+    setRefreshing(true);
+    await onRefresh();
+    setRefreshing(false);
+  };
 
   // --- LOGIKA DOŁĄCZANIA ---
   const handleJoinWithCode = async () => {
@@ -80,6 +91,7 @@ const CaregiverDashboard = ({
       ) {
         showAlert("Informacja", "Już jesteś przypisany.");
         onRefresh();
+        setJoinModalVisible(false);
         return;
       }
 
@@ -90,6 +102,7 @@ const CaregiverDashboard = ({
       });
 
       setLoading(false);
+      setJoinModalVisible(false);
       setInviteCode("");
       showAlert("Sukces!", "Dołączono do profilu.");
       onRefresh();
@@ -130,7 +143,6 @@ const CaregiverDashboard = ({
         icon: "clock-alert-outline",
       };
 
-    // Sprawdzanie czy dziś/jutro
     const isToday = start.toDateString() === now.toDateString();
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -178,6 +190,12 @@ const CaregiverDashboard = ({
               minHeight: "80%",
             },
           ]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handlePullToRefresh}
+            />
+          }
         >
           <View style={styles.emptyDashboardContainer}>
             <View
@@ -220,13 +238,10 @@ const CaregiverDashboard = ({
     );
   }
 
-  // PRZYGOTOWANIE DANYCH
   const activeShift = shifts.find((s) => getShiftStatus(s).active);
-  // Szukamy następnej (jeśli nie ma aktywnej)
   const nextShift = !activeShift
     ? shifts.find((s) => s.start.toDate() > new Date())
     : null;
-
   const cardShift = activeShift || nextShift;
 
   const markedDates: any = {};
@@ -249,8 +264,14 @@ const CaregiverDashboard = ({
       style={styles.content}
       contentContainerStyle={{ paddingBottom: 30 }}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handlePullToRefresh}
+        />
+      }
     >
-      {/* KARTA STATUSU (HERO) - NAPRAWIONE KLIKANIE */}
+      {/* KARTA STATUSU (HERO) */}
       <View style={{ marginBottom: 20 }}>
         {cardShift ? (
           (() => {
@@ -261,7 +282,6 @@ const CaregiverDashboard = ({
                   styles.heroStatusCard,
                   { backgroundColor: status.bg, borderColor: status.color },
                 ]}
-                // TO JEST NAPRAWA: Przycisk działa
                 onPress={() =>
                   navigation.navigate("ShiftDetail", { shiftId: cardShift.id })
                 }
@@ -306,7 +326,6 @@ const CaregiverDashboard = ({
                       minute: "2-digit",
                     })}
                 </Text>
-                {/* Jeśli to przyszła wizyta, dodaj datę */}
                 {!activeShift && (
                   <Text
                     style={{ fontSize: 14, color: "#666", marginBottom: 5 }}
@@ -320,7 +339,6 @@ const CaregiverDashboard = ({
                       })}
                   </Text>
                 )}
-
                 <View
                   style={[styles.openBtn, { backgroundColor: status.color }]}
                 >
@@ -403,7 +421,17 @@ const CaregiverDashboard = ({
             </Text>
           </TouchableOpacity>
         ))}
-        {/* Usunięto przycisk DODAJ dla opiekunki z tego miejsca, bo jest już w pustym stanie */}
+        <TouchableOpacity
+          style={styles.miniAddCard}
+          onPress={() => setJoinModalVisible(true)}
+        >
+          <MaterialCommunityIcons
+            name="plus"
+            size={24}
+            color={theme.colors.primary}
+          />
+          <Text style={styles.miniAddText}>Dodaj</Text>
+        </TouchableOpacity>
       </View>
 
       {/* KALENDARZ */}
@@ -455,6 +483,71 @@ const CaregiverDashboard = ({
           <Text style={styles.emptyText}>Wolne! Brak wizyt tego dnia.</Text>
         )}
       </View>
+
+      {/* PRZYCISK STATYSTYK */}
+      <View style={{ marginTop: 20 }}>
+        <TouchableOpacity
+          style={styles.statsBtn}
+          onPress={() => navigation.navigate("Stats")}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <View style={[styles.iconCircle, { backgroundColor: "#E0F2F1" }]}>
+              <MaterialCommunityIcons
+                name="chart-bar"
+                size={24}
+                color="#009688"
+              />
+            </View>
+            <Text style={styles.statsText}>Moje podsumowanie godzin</Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={24} color="#ccc" />
+        </TouchableOpacity>
+      </View>
+
+      {/* MODAL DOŁĄCZANIA */}
+      <Modal
+        visible={isJoinModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setJoinModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "padding"}
+          style={styles.modalContainer}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Dołącz do profilu</Text>
+            <Text style={styles.modalSub}>
+              Wpisz 6-cyfrowy kod od Opiekuna Głównego:
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="123456"
+              value={inviteCode}
+              onChangeText={setInviteCode}
+              keyboardType="number-pad"
+              maxLength={6}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalBtnCancel}
+                onPress={() => setJoinModalVisible(false)}
+              >
+                <Text style={{ color: "gray" }}>Anuluj</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalBtnJoin}
+                onPress={handleJoinWithCode}
+              >
+                <Text style={{ color: "white", fontWeight: "bold" }}>
+                  Dołącz
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 };
@@ -554,6 +647,49 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   openBtnText: { color: "white", fontWeight: "bold", letterSpacing: 1 },
+  openShiftBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#f0f0f0",
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  openShiftBadgeText: { color: "#555", fontSize: 12, fontWeight: "600" },
+
+  cardTimeBig: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#333",
+    marginVertical: 5,
+  },
+  cardDateBig: { fontSize: 16, color: "#666", marginBottom: 15 },
+
+  listHeaderSimple: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 15,
+  },
+  simpleShiftRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "white",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 10,
+    elevation: 1,
+  },
+  dateBadge: {
+    backgroundColor: "#f0f0f0",
+    padding: 8,
+    borderRadius: 8,
+    alignItems: "center",
+    minWidth: 50,
+  },
+  dayNum: { fontSize: 16, fontWeight: "bold", color: "#333" },
+  monStr: { fontSize: 12, color: "#666", textTransform: "uppercase" },
+  simpleShiftTime: { fontSize: 16, fontWeight: "600", color: "#333" },
+  simpleShiftCaregiver: { fontSize: 13, color: "#666", marginTop: 2 },
 
   sectionLabel: {
     fontSize: 18,
@@ -593,6 +729,22 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: theme.colors.text,
   },
+  miniAddCard: {
+    backgroundColor: "#F5F5F5",
+    padding: 10,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    width: 90,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderStyle: "dashed",
+  },
+  miniAddText: {
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    marginTop: 5,
+  },
   calendar: { borderRadius: 10, elevation: 2, marginBottom: 15 },
   dateHeader: {
     fontSize: 16,
@@ -619,6 +771,67 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 20,
     fontStyle: "italic",
+  },
+
+  statsBtn: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "white",
+    padding: 15,
+    borderRadius: 12,
+    elevation: 2,
+    marginBottom: 20,
+  },
+  iconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 15,
+  },
+  statsText: { fontSize: 16, fontWeight: "600", color: theme.colors.text },
+
+  modalContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  modalContent: {
+    backgroundColor: "white",
+    width: "85%",
+    padding: 25,
+    borderRadius: 20,
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    marginBottom: 10,
+    textAlign: "center",
+    color: theme.colors.text,
+  },
+  modalSub: { color: "gray", marginBottom: 20, textAlign: "center" },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 12,
+    padding: 15,
+    fontSize: 18,
+    textAlign: "center",
+    marginBottom: 25,
+    letterSpacing: 5,
+  },
+  modalButtons: { flexDirection: "row", justifyContent: "space-between" },
+  modalBtnCancel: { padding: 15 },
+  modalBtnJoin: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 12,
+    elevation: 2,
   },
 });
 

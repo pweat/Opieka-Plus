@@ -14,8 +14,9 @@ import { auth, db } from "../../firebaseConfig";
 import { theme } from "../../theme";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
-// 1. Importujemy hook
 import { useAlert } from "../context/AlertContext";
+// Dodajemy ikony
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 const RegisterScreen = ({
   route,
@@ -30,12 +31,10 @@ const RegisterScreen = ({
   const [confirmPassword, setConfirmPassword] = useState("");
   const { selectedRole } = route.params;
 
-  // 2. Używamy hooka
   const { showAlert } = useAlert();
 
   const handleRegister = async () => {
     if (!name || !email || !password || password !== confirmPassword) {
-      // 3. Podmieniamy alerty
       showAlert(
         "Błąd",
         "Sprawdź, czy wszystkie pola są wypełnione i czy hasła są identyczne."
@@ -56,6 +55,7 @@ const RegisterScreen = ({
         email: user.email,
         role: selectedRole,
         createdAt: new Date(),
+        photoURL: "", // Inicjujemy puste zdjęcie
       });
 
       showAlert("Sukces!", "Konto zostało pomyślnie utworzone.");
@@ -72,6 +72,18 @@ const RegisterScreen = ({
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* PRZYCISK COFANIA */}
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => navigation.goBack()}
+      >
+        <MaterialCommunityIcons
+          name="arrow-left"
+          size={28}
+          color={theme.colors.primary}
+        />
+      </TouchableOpacity>
+
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
@@ -135,6 +147,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
+  },
+  // Styl przycisku cofania
+  backButton: {
+    position: "absolute",
+    top: 50, // Dopasowane do paska statusu (bezpieczny margines)
+    left: 20,
+    zIndex: 10,
+    padding: 5,
   },
   scrollContainer: {
     flexGrow: 1,

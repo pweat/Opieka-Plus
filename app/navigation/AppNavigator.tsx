@@ -13,6 +13,7 @@ import ReportDetailScreen from "../screens/ReportDetailScreen";
 import MedicalHistoryScreen from "../screens/MedicalHistoryScreen";
 import EditVisitScreen from "../screens/EditVisitScreen";
 import UserProfileScreen from "../screens/UserProfileScreen";
+import StatsScreen from "../screens/StatsScreen";
 
 // Definiujemy typy parametrów dla każdego ekranu (Dobra praktyka)
 export type RootStackParamList = {
@@ -27,6 +28,7 @@ export type RootStackParamList = {
   MedicalHistory: { patientId: string };
   EditVisit: { shiftId: string };
   UserProfile: undefined;
+  Stats: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -89,6 +91,11 @@ const AppNavigator = () => {
         name="UserProfile"
         component={UserProfileScreen}
         options={{ title: "Ustawienia Konta" }}
+      />
+      <Stack.Screen
+        name="Stats"
+        component={StatsScreen}
+        options={{ title: "Podsumowanie Godzin" }}
       />
     </Stack.Navigator>
   );

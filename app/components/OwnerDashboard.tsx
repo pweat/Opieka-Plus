@@ -7,6 +7,7 @@ import {
   ScrollView,
   FlatList,
   Image,
+  RefreshControl, // Dodano import
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { theme } from "../../theme";
@@ -23,13 +24,27 @@ import { db } from "../../firebaseConfig";
 interface OwnerDashboardProps {
   patients: any[];
   navigation: any;
+  onRefresh: () => void; // <--- Tego brakowało
 }
 
-const OwnerDashboard = ({ patients, navigation }: OwnerDashboardProps) => {
+const OwnerDashboard = ({
+  patients,
+  navigation,
+  onRefresh,
+}: OwnerDashboardProps) => {
   const [nextShift, setNextShift] = useState<any>(null);
   const [loadingShift, setLoadingShift] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Funkcja do pobrania najbliższej wizyty (tylko dla pierwszego pacjenta w uproszczeniu)
+  const handlePullToRefresh = async () => {
+    setRefreshing(true);
+    await onRefresh();
+    if (patients.length === 1) {
+      await fetchNextShift(patients[0].id);
+    }
+    setRefreshing(false);
+  };
+
   useEffect(() => {
     if (patients.length === 1) {
       fetchNextShift(patients[0].id);
@@ -40,7 +55,6 @@ const OwnerDashboard = ({ patients, navigation }: OwnerDashboardProps) => {
     setLoadingShift(true);
     try {
       const now = new Date();
-      // Pobierz wizyty, które zaczynają się od "teraz" w górę
       const q = query(
         collection(db, "shifts"),
         where("patientId", "==", patientId),
@@ -60,14 +74,20 @@ const OwnerDashboard = ({ patients, navigation }: OwnerDashboardProps) => {
     setLoadingShift(false);
   };
 
-  // === 1. WIDOK: BRAK PACJENTÓW (Bez zmian) ===
+  // === 1. WIDOK: BRAK PACJENTÓW ===
   if (patients.length === 0) {
     return (
-      <View
-        style={[
+      <ScrollView
+        contentContainerStyle={[
           styles.content,
-          { justifyContent: "center", alignItems: "center" },
+          { justifyContent: "center", alignItems: "center", flex: 1 },
         ]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handlePullToRefresh}
+          />
+        }
       >
         <View style={styles.emptyDashboardContainer}>
           <View
@@ -98,22 +118,26 @@ const OwnerDashboard = ({ patients, navigation }: OwnerDashboardProps) => {
             <Text style={styles.bigAddButtonText}>Dodaj Podopiecznego</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     );
   }
 
-  // === 2. WIDOK: JEDEN PACJENT (TUTAJ ZMIENIAMY LOGIKĘ) ===
+  // === 2. WIDOK: JEDEN PACJENT ===
   if (patients.length === 1) {
     const p = patients[0];
-    // Sprawdzamy, czy jest to "nowy" profil (brak opiekunów)
     const hasCaregivers = p.caregiverIds && p.caregiverIds.length > 0;
 
     return (
       <ScrollView
         style={styles.content}
         contentContainerStyle={{ paddingBottom: 100 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handlePullToRefresh}
+          />
+        }
       >
-        {/* KARTA PACJENTA (UPROSZCZONA) */}
         <View style={styles.heroCard}>
           <View style={styles.heroHeader}>
             <View style={styles.heroAvatarContainer}>
@@ -148,7 +172,6 @@ const OwnerDashboard = ({ patients, navigation }: OwnerDashboardProps) => {
             </TouchableOpacity>
           </View>
 
-          {/* STATUS LUB NAJBLIŻSZA WIZYTA */}
           <View style={styles.statusStrip}>
             {nextShift ? (
               <>
@@ -183,7 +206,6 @@ const OwnerDashboard = ({ patients, navigation }: OwnerDashboardProps) => {
           </View>
         </View>
 
-        {/* === LOGIKA ONBOARDINGU (PROWADZENIE ZA RĘKĘ) === */}
         {!hasCaregivers ? (
           <View style={styles.onboardingContainer}>
             <Text style={styles.onboardingTitle}>👋 Konfiguracja Opieki</Text>
@@ -192,7 +214,6 @@ const OwnerDashboard = ({ patients, navigation }: OwnerDashboardProps) => {
               działało:
             </Text>
 
-            {/* KROK 1 */}
             <View style={styles.stepCard}>
               <View style={styles.stepNumber}>
                 <Text style={styles.stepNumText}>1</Text>
@@ -219,7 +240,6 @@ const OwnerDashboard = ({ patients, navigation }: OwnerDashboardProps) => {
               </View>
             </View>
 
-            {/* KROK 2 */}
             <View style={[styles.stepCard, { opacity: 0.7 }]}>
               <View style={[styles.stepNumber, { backgroundColor: "#ccc" }]}>
                 <Text style={styles.stepNumText}>2</Text>
@@ -230,7 +250,6 @@ const OwnerDashboard = ({ patients, navigation }: OwnerDashboardProps) => {
                   Gdy już masz opiekuna, ustal kiedy ma przyjść. To uruchomi
                   kalendarz.
                 </Text>
-                {/* Ten przycisk kieruje do planowania, ale sugerujemy najpierw krok 1 */}
                 <TouchableOpacity
                   style={[styles.stepActionBtn, { backgroundColor: "#999" }]}
                   onPress={() =>
@@ -246,7 +265,6 @@ const OwnerDashboard = ({ patients, navigation }: OwnerDashboardProps) => {
             </View>
           </View>
         ) : (
-          // === WIDOK "WSZYSTKO GOTOWE" (Skróty) ===
           <View>
             <Text style={styles.sectionLabel}>Szybkie Akcje</Text>
             <View style={styles.quickActionsRow}>
@@ -267,9 +285,6 @@ const OwnerDashboard = ({ patients, navigation }: OwnerDashboardProps) => {
                   />
                 </View>
                 <Text style={styles.tileTitle}>Zaplanuj Wizytę</Text>
-                <Text style={styles.tileDesc}>
-                  Dodaj nową wizytę do grafiku.
-                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -289,45 +304,65 @@ const OwnerDashboard = ({ patients, navigation }: OwnerDashboardProps) => {
                   />
                 </View>
                 <Text style={styles.tileTitle}>Historia i Raporty</Text>
-                <Text style={styles.tileDesc}>
-                  Zobacz podsumowania i kalendarz.
-                </Text>
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              style={styles.wideActionBtn}
-              onPress={() =>
-                navigation.navigate("ManageCaregivers", { patientId: p.id })
-              }
-            >
-              <MaterialCommunityIcons
-                name="account-group"
-                size={24}
-                color="#555"
-              />
-              <Text style={styles.wideBtnText}>
-                Zarządzaj zespołem opiekunów
-              </Text>
-              <MaterialCommunityIcons
-                name="chevron-right"
-                size={24}
-                color="#ccc"
-              />
-            </TouchableOpacity>
+            <View style={styles.quickActionsRow}>
+              <TouchableOpacity
+                style={styles.wideActionBtn}
+                onPress={() =>
+                  navigation.navigate("ManageCaregivers", { patientId: p.id })
+                }
+              >
+                <MaterialCommunityIcons
+                  name="account-group"
+                  size={24}
+                  color="#555"
+                />
+                <Text style={styles.wideBtnText}>Zespół opiekunów</Text>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={24}
+                  color="#ccc"
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.wideActionBtn, { marginLeft: 10 }]}
+                onPress={() => navigation.navigate("Stats")}
+              >
+                <MaterialCommunityIcons
+                  name="chart-bar"
+                  size={24}
+                  color="#009688"
+                />
+                <Text style={styles.wideBtnText}>Statystyki</Text>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={24}
+                  color="#ccc"
+                />
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       </ScrollView>
     );
   }
 
-  // === 3. WIDOK: WIELU PACJENTÓW (Lista) ===
+  // === 3. WIDOK: WIELU PACJENTÓW ===
   return (
     <View style={styles.content}>
       <Text style={styles.title}>Twoi podopieczni</Text>
       <FlatList
         data={patients}
         keyExtractor={(item) => item.id}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handlePullToRefresh}
+          />
+        }
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.patientCard}
@@ -383,8 +418,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.large,
     paddingTop: theme.spacing.medium,
   },
-
-  // EMPTY STATE
   emptyDashboardContainer: {
     alignItems: "center",
     justifyContent: "center",
@@ -429,8 +462,6 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   bigAddButtonText: { color: "white", fontSize: 16, fontWeight: "bold" },
-
-  // HERO CARD (Simple)
   heroCard: {
     backgroundColor: "white",
     borderRadius: 20,
@@ -475,8 +506,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   statusText: { fontSize: 13, color: "#444" },
-
-  // ONBOARDING STYLES (Prowadzenie za rękę)
   onboardingContainer: { marginTop: 10 },
   onboardingTitle: {
     fontSize: 20,
@@ -485,7 +514,6 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   onboardingSub: { fontSize: 14, color: "#666", marginBottom: 20 },
-
   stepCard: {
     flexDirection: "row",
     backgroundColor: "white",
@@ -523,8 +551,6 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   stepBtnText: { color: "white", fontWeight: "bold", fontSize: 13 },
-
-  // QUICK ACTIONS (Gdy już skonfigurowane)
   sectionLabel: {
     fontSize: 18,
     fontWeight: "bold",
@@ -534,7 +560,7 @@ const styles = StyleSheet.create({
   quickActionsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 20,
+    marginBottom: 15,
   },
   bigActionTile: {
     width: "48%",
@@ -560,8 +586,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   tileDesc: { fontSize: 12, color: "#888", textAlign: "center" },
-
   wideActionBtn: {
+    flex: 1,
     flexDirection: "row",
     backgroundColor: "white",
     padding: 15,
@@ -571,8 +597,6 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   wideBtnText: { fontSize: 14, fontWeight: "600", color: "#555" },
-
-  // LIST (Many patients)
   title: {
     fontSize: theme.fonts.title,
     fontWeight: "bold",

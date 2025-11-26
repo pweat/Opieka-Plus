@@ -69,6 +69,7 @@ LocaleConfig.locales["pl"] = {
 };
 LocaleConfig.defaultLocale = "pl";
 
+// === INTERFEJSY ===
 interface Shift {
   id: string;
   patientName: string;
@@ -110,6 +111,8 @@ const PatientDetailScreen = ({
   const [activeTab, setActiveTab] = useState<"dashboard" | "calendar">(
     "dashboard"
   );
+
+  // Kalendarz
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
   );
@@ -148,7 +151,6 @@ const PatientDetailScreen = ({
         const pData = patientDoc.data();
         setPatient({ id: patientDoc.id, ...pData });
 
-        // Pobieranie wizyt
         const shiftsQuery = query(
           collection(db, "shifts"),
           where("patientId", "==", patientId),
@@ -203,7 +205,6 @@ const PatientDetailScreen = ({
           hasData: dataExists,
         });
 
-        // Opiekunowie
         const uniqueIds = new Set<string>();
         shiftsData.forEach((s) => {
           if (s.caregiverId) uniqueIds.add(s.caregiverId);
@@ -237,6 +238,45 @@ const PatientDetailScreen = ({
     return unsubscribe;
   }, [patientId, navigation]);
 
+  // === DEFINICJA KOMPONENTU ZAKŁADEK (NAPRAWA BŁĘDU) ===
+  // Umieszczona tutaj, aby była widoczna dla całego komponentu
+  const TabSelector = () => (
+    <View style={styles.tabContainer}>
+      <TouchableOpacity
+        style={[
+          styles.tabButton,
+          activeTab === "dashboard" && styles.tabButtonActive,
+        ]}
+        onPress={() => setActiveTab("dashboard")}
+      >
+        <Text
+          style={[
+            styles.tabText,
+            activeTab === "dashboard" && styles.tabTextActive,
+          ]}
+        >
+          🏠 Pulpit
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[
+          styles.tabButton,
+          activeTab === "calendar" && styles.tabButtonActive,
+        ]}
+        onPress={() => setActiveTab("calendar")}
+      >
+        <Text
+          style={[
+            styles.tabText,
+            activeTab === "calendar" && styles.tabTextActive,
+          ]}
+        >
+          📅 Harmonogram
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   if (loading)
     return (
       <View style={[styles.container, styles.center]}>
@@ -252,7 +292,6 @@ const PatientDetailScreen = ({
 
   const isOwner = userRole === "opiekun_glowny";
 
-  // === POMOCNIK: LOGIKA STATUSU NAGŁÓWKA ===
   const getSmartHeaderStatus = (shift: Shift) => {
     const now = new Date();
     const start = shift.start.toDate();
@@ -311,26 +350,42 @@ const PatientDetailScreen = ({
     };
   };
 
+  const BackButton = () => (
+    <TouchableOpacity
+      style={styles.backButton}
+      onPress={() => navigation.goBack()}
+    >
+      <MaterialCommunityIcons
+        name="arrow-left"
+        size={28}
+        color={theme.colors.primary}
+      />
+    </TouchableOpacity>
+  );
+
   // =====================================================================
-  // 1. WIDOK OPIEKUNKI
+  // 1. WIDOK OPIEKUNKI (UPROSZCZONY)
   // =====================================================================
   const renderCaregiverView = () => {
     const shiftsAsc = [...allShifts].reverse();
     const myNextShift = shiftsAsc.find(
       (s) => s.caregiverId === currentUserId && s.status !== "completed"
     );
-    const futureShifts = shiftsAsc.filter(
-      (s) =>
-        s.id !== myNextShift?.id &&
-        s.start.toDate() > new Date() &&
-        s.status !== "completed"
-    );
+    const futureShifts = shiftsAsc
+      .filter(
+        (s) =>
+          s.id !== myNextShift?.id &&
+          s.start.toDate() > new Date() &&
+          s.status !== "completed"
+      )
+      .reverse();
 
     return (
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
       >
+        <BackButton />
         <View style={styles.simpleProfileCard}>
           <View style={styles.avatarContainer}>
             {patient.photoURL ? (
@@ -494,6 +549,7 @@ const PatientDetailScreen = ({
   const renderOwnerDashboard = () => (
     <ScrollView contentContainerStyle={styles.scrollContent}>
       <View style={styles.profileHeader}>
+        <BackButton />
         <View style={styles.avatarContainer}>
           {patient.photoURL ? (
             <Image source={{ uri: patient.photoURL }} style={styles.avatar} />
@@ -673,6 +729,9 @@ const PatientDetailScreen = ({
 
     return (
       <View style={{ flex: 1 }}>
+        <View style={{ position: "absolute", top: 15, left: 15, zIndex: 10 }}>
+          <BackButton />
+        </View>
         <Calendar
           current={selectedDate}
           onDayPress={(day: any) => setSelectedDate(day.dateString)}
@@ -748,46 +807,8 @@ const PatientDetailScreen = ({
     );
   };
 
-  const TabSelector = () => (
-    <View style={styles.tabContainer}>
-      <TouchableOpacity
-        style={[
-          styles.tabButton,
-          activeTab === "dashboard" && styles.tabButtonActive,
-        ]}
-        onPress={() => setActiveTab("dashboard")}
-      >
-        <Text
-          style={[
-            styles.tabText,
-            activeTab === "dashboard" && styles.tabTextActive,
-          ]}
-        >
-          🏠 Pulpit
-        </Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[
-          styles.tabButton,
-          activeTab === "calendar" && styles.tabButtonActive,
-        ]}
-        onPress={() => setActiveTab("calendar")}
-      >
-        <Text
-          style={[
-            styles.tabText,
-            activeTab === "calendar" && styles.tabTextActive,
-          ]}
-        >
-          📅 Harmonogram
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-
   return (
     <SafeAreaView style={styles.container}>
-      {/* GŁÓWNY RETURN - LOGIKA PRZEŁĄCZANIA WIDOKÓW */}
       {isOwner ? (
         <>
           <TabSelector />
@@ -809,8 +830,15 @@ const styles = StyleSheet.create({
   center: { justifyContent: "center", alignItems: "center" },
   contentContainer: { flex: 1 },
   scrollContent: { padding: 20 },
+  backButton: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    padding: 10,
+    zIndex: 10,
+  },
 
-  // CAREGIVER STYLES
+  // STYLES FOR CAREGIVER VIEW (SIMPLE)
   simpleProfileCard: {
     backgroundColor: "white",
     borderRadius: 20,
@@ -818,6 +846,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     elevation: 3,
     marginBottom: 25,
+    paddingTop: 40,
   },
   avatarBig: { width: 100, height: 100, borderRadius: 50, marginBottom: 10 },
   avatarPlaceholderBig: {
@@ -1097,7 +1126,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#ddd",
   },
-  dateHeader: { fontSize: 16, fontWeight: "bold", color: theme.colors.text },
+  dateHeader: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 10,
+  },
   shiftCard: {
     backgroundColor: theme.colors.card,
     padding: 15,

@@ -30,7 +30,6 @@ interface FoodLog {
   time: string;
   description: string;
 }
-
 interface ShiftDetails {
   id: string;
   patientName: string;
@@ -78,7 +77,6 @@ const ShiftDetailScreen = ({
   );
   const { showAlert } = useAlert();
 
-  // Formularze
   const [notes, setNotes] = useState("");
   const [moodNote, setMoodNote] = useState("");
   const [newNap, setNewNap] = useState("");
@@ -108,8 +106,6 @@ const ShiftDetailScreen = ({
         const shiftDoc = await getDoc(shiftDocRef);
         if (shiftDoc.exists()) {
           const data = shiftDoc.data();
-          // USUNIĘTO AUTO-START WIZYTY!
-
           const savedMoods = data.moods || [];
           const mergedMoods = Array.from(
             new Set([...DEFAULT_MOOD_OPTIONS, ...savedMoods])
@@ -136,7 +132,6 @@ const ShiftDetailScreen = ({
             foodLogs: data.foodLogs || [],
             notes: data.notes || "",
           });
-
           setNotes(data.notes || "");
           setMoodNote(data.moodNote || "");
         } else {
@@ -152,7 +147,7 @@ const ShiftDetailScreen = ({
     fetchData();
   }, [shiftId]);
 
-  // === ROZPOCZYNANIE WIZYTY ===
+  // === ROZPOCZYNANIE WIZYTY (TYLKO OPIEKUN) ===
   const handleStartShift = async () => {
     setIsSaving(true);
     try {
@@ -165,9 +160,11 @@ const ShiftDetailScreen = ({
     setIsSaving(false);
   };
 
-  // === HELPERY DO EDYCJI ===
+  // --- HELPERY (DZIAŁAJĄ TYLKO JEŚLI !isOwner) ---
+  const isOwner = userRole === "opiekun_glowny";
+
   const updateField = async (field: keyof ShiftDetails, value: any) => {
-    if (!shift) return;
+    if (!shift || isOwner) return; // Blokada dla szefa
     setShift((prev) => ({ ...prev!, [field]: value }));
     try {
       await updateDoc(shiftDocRef, { [field]: value });
@@ -175,56 +172,56 @@ const ShiftDetailScreen = ({
   };
 
   const toggleTask = async (index: number) => {
-    if (!shift) return;
+    if (!shift || isOwner) return;
     const newTasks = [...shift.tasks];
     newTasks[index].isDone = !newTasks[index].isDone;
     updateField("tasks", newTasks);
   };
 
-  // ... (Reszta funkcji pomocniczych bez zmian: toggleMood, addDrink, addFood itd.)
-  // SKROCONO DLA CZYTELNOŚCI - WKLEJ TUTAJ FUNKCJE toggleMood, addNap, removeNap, addDrink, removeDrink, addFood, removeFood, saveTextInputs Z POPRZEDNIEGO PLIKU
-  // Poniżej wklejam je ponownie dla pewności:
+  // ... (Reszta funkcji identycznie zabezpieczona if (isOwner) return; )
+  // DLA SKRÓCENIA WKLEJAM KLUCZOWE ZABEZPIECZENIA W UI:
 
   const toggleMood = (mood: string) => {
-    if (!shift) return;
+    if (!shift || isOwner) return;
     let newMoods = shift.moods || [];
     if (newMoods.includes(mood)) newMoods = newMoods.filter((m) => m !== mood);
     else newMoods = [...newMoods, mood];
     updateField("moods", newMoods);
   };
-  const addCustomMood = () => {
-    if (customMood.trim() === "") return;
-    const moodToAdd = customMood.trim();
-    if (!availableMoods.includes(moodToAdd))
-      setAvailableMoods((prev) => [...prev, moodToAdd]);
-    toggleMood(moodToAdd);
-    setCustomMood("");
-  };
+
+  // Funkcje dodawania
   const addNap = () => {
-    if (newNap.trim() === "") return;
+    if (isOwner) return;
+    if (newNap.trim() === "") return showAlert("Uwaga", "Wpisz godziny.");
     const updatedNaps = [...(shift?.sleepLogs || []), newNap.trim()];
     updateField("sleepLogs", updatedNaps);
     setNewNap("");
   };
   const removeNap = (index: number) => {
+    if (isOwner) return;
     const updatedNaps = (shift?.sleepLogs || []).filter((_, i) => i !== index);
     updateField("sleepLogs", updatedNaps);
   };
   const addDrink = (amount: number) => {
-    const type = drinkType.trim() || "Woda";
+    if (isOwner) return;
+    if (drinkType.trim() === "")
+      return showAlert("Brak nazwy", "Wpisz rodzaj napoju.");
+    const type = drinkType.trim();
     const newEntry = { type, amount };
     const updatedDrinks = [...(shift?.intakeLogs || []), newEntry];
     updateField("intakeLogs", updatedDrinks);
   };
   const removeDrink = (index: number) => {
+    if (isOwner) return;
     const updatedDrinks = (shift?.intakeLogs || []).filter(
       (_, i) => i !== index
     );
     updateField("intakeLogs", updatedDrinks);
   };
   const addFood = () => {
+    if (isOwner) return;
     if (newFoodDesc.trim() === "")
-      return showAlert("Uwaga", "Wpisz co zostało zjedzone.");
+      return showAlert("Uwaga", "Wpisz co zjedzono.");
     const time =
       newFoodTime.trim() ||
       new Date().toLocaleTimeString("pl-PL", {
@@ -238,17 +235,27 @@ const ShiftDetailScreen = ({
     setNewFoodTime("");
   };
   const removeFood = (index: number) => {
+    if (isOwner) return;
     const updatedFood = (shift?.foodLogs || []).filter((_, i) => i !== index);
     updateField("foodLogs", updatedFood);
   };
+  const addCustomMood = () => {
+    if (isOwner) return;
+    if (customMood.trim() === "") return;
+    const moodToAdd = customMood.trim();
+    if (!availableMoods.includes(moodToAdd))
+      setAvailableMoods((prev) => [...prev, moodToAdd]);
+    toggleMood(moodToAdd);
+    setCustomMood("");
+  };
   const saveTextInputs = async () => {
+    if (isOwner) return;
     try {
       await updateDoc(shiftDocRef, { notes, moodNote });
     } catch (e) {}
   };
-
   const handleFinishShift = () => {
-    showAlert("Zakończyć wizytę?", "Czy na pewno uzupełniłaś wszystkie dane?", [
+    showAlert("Zakończyć?", "Potwierdzasz dane?", [
       { text: "Anuluj", style: "cancel" },
       {
         text: "Zakończ",
@@ -261,37 +268,32 @@ const ShiftDetailScreen = ({
               moodNote,
             });
             navigation.goBack();
-          } catch (error) {
+          } catch (e) {
             setIsSaving(false);
-            Alert.alert("Błąd", "Nie udało się zakończyć.");
+            showAlert("Błąd", "Nie udało się.");
           }
         },
       },
     ]);
   };
-
   const handleDeleteShift = () => {
-    showAlert(
-      "Usuń wizytę",
-      "Czy na pewno chcesz usunąć tę wizytę? To jest nieodwracalne.",
-      [
-        { text: "Anuluj", style: "cancel" },
-        {
-          text: "Usuń",
-          style: "destructive",
-          onPress: async () => {
-            setIsSaving(true);
-            try {
-              await deleteDoc(shiftDocRef);
-              navigation.goBack();
-            } catch (error) {
-              setIsSaving(false);
-              showAlert("Błąd", "Nie udało się usunąć.");
-            }
-          },
+    showAlert("Usuń wizytę", "To nieodwracalne.", [
+      { text: "Anuluj", style: "cancel" },
+      {
+        text: "Usuń",
+        style: "destructive",
+        onPress: async () => {
+          setIsSaving(true);
+          try {
+            await deleteDoc(shiftDocRef);
+            navigation.goBack();
+          } catch (e) {
+            setIsSaving(false);
+            showAlert("Błąd", "Błąd usuwania.");
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   if (loading || isSaving)
@@ -304,13 +306,20 @@ const ShiftDetailScreen = ({
     );
   if (!shift) return null;
 
-  const isOwner = userRole === "opiekun_glowny";
-  const isScheduled = shift.status === "scheduled";
-
-  // === WIDOK STARTOWY DLA OPIEKUNKI (BLOKADA) ===
-  if (!isOwner && isScheduled) {
+  // BLOKADA STARTU DLA OPIEKUNKI
+  if (!isOwner && shift.status === "scheduled") {
     return (
       <View style={[styles.container, styles.centerContent]}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+        >
+          <MaterialCommunityIcons
+            name="arrow-left"
+            size={28}
+            color={theme.colors.primary}
+          />
+        </TouchableOpacity>
         <MaterialCommunityIcons
           name="calendar-clock"
           size={80}
@@ -318,7 +327,6 @@ const ShiftDetailScreen = ({
         />
         <Text style={styles.startTitle}>Wizyta Zaplanowana</Text>
         <Text style={styles.startSub}>Pacjent: {shift.patientName}</Text>
-
         <View style={styles.startCard}>
           <Text style={styles.startLabel}>Zadania do wykonania:</Text>
           {shift.tasks.length > 0 ? (
@@ -331,16 +339,8 @@ const ShiftDetailScreen = ({
             <Text style={{ color: "#888" }}>Brak zadań</Text>
           )}
         </View>
-
         <TouchableOpacity style={styles.startButton} onPress={handleStartShift}>
           <Text style={styles.startButtonText}>ROZPOCZNIJ WIZYTĘ</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={{ marginTop: 20 }}
-          onPress={() => navigation.goBack()}
-        >
-          <Text style={{ color: "#666" }}>Wróć</Text>
         </TouchableOpacity>
       </View>
     );
@@ -356,10 +356,21 @@ const ShiftDetailScreen = ({
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+        >
+          <MaterialCommunityIcons
+            name="arrow-left"
+            size={28}
+            color={theme.colors.primary}
+          />
+        </TouchableOpacity>
+
         <Text style={styles.headerName}>{shift.patientName}</Text>
 
-        {/* BANER DLA SZEFA (Status) */}
-        {isOwner && isScheduled && (
+        {/* BANER TRYB PODGLĄDU (DLA SZEFA) */}
+        {isOwner && (
           <View style={styles.infoBanner}>
             <MaterialCommunityIcons
               name="eye-outline"
@@ -367,20 +378,21 @@ const ShiftDetailScreen = ({
               color="#1565C0"
             />
             <Text style={styles.infoText}>
-              Tryb podglądu. Oczekiwanie na rozpoczęcie przez opiekuna.
+              Tryb podglądu (Edycja zablokowana). Obserwujesz pracę opiekuna.
             </Text>
           </View>
         )}
 
-        {/* --- ZADANIA --- */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📋 Zadania do wykonania</Text>
+        {/* ZADANIA */}
+        <View style={[styles.section, isOwner && { opacity: 0.7 }]}>
+          <Text style={styles.sectionTitle}>📋 Zadania</Text>
           {shift.tasks.length > 0 ? (
             shift.tasks.map((t, i) => (
               <TouchableOpacity
                 key={i}
                 style={styles.taskRow}
                 onPress={() => toggleTask(i)}
+                disabled={isOwner}
               >
                 <View
                   style={[styles.checkbox, t.isDone && styles.checkboxActive]}
@@ -390,10 +402,7 @@ const ShiftDetailScreen = ({
                 <Text
                   style={[
                     styles.taskText,
-                    t.isDone && {
-                      color: theme.colors.textSecondary,
-                      textDecorationLine: "line-through",
-                    },
+                    t.isDone && { color: theme.colors.textSecondary },
                   ]}
                 >
                   {t.description}
@@ -405,10 +414,9 @@ const ShiftDetailScreen = ({
           )}
         </View>
 
-        {/* --- SIŁA I KOJARZENIE --- */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>💪 Siła i Kojarzenie</Text>
-          <Text style={styles.label}>Siła fizyczna:</Text>
+        {/* FIZYCZNE */}
+        <View style={[styles.section, isOwner && { opacity: 0.7 }]}>
+          <Text style={styles.sectionTitle}>💪 Stan Fizyczny</Text>
           <View style={styles.segmentRow}>
             {["Słaba", "Średnia", "Dobra"].map((s) => (
               <TouchableOpacity
@@ -418,6 +426,7 @@ const ShiftDetailScreen = ({
                   shift.strength === s && styles.segmentBtnActive,
                 ]}
                 onPress={() => updateField("strength", s)}
+                disabled={isOwner}
               >
                 <Text
                   style={[
@@ -432,16 +441,11 @@ const ShiftDetailScreen = ({
           </View>
           <Text style={styles.label}>Kojarzenie (1-10):</Text>
           <View style={styles.gridContainer}>
-            {[...Array(10).keys()]
-              .map((i) => i + 1)
-              .reduce((rows: any[], key, index) => {
-                if (index % 5 === 0) rows.push([]);
-                rows[rows.length - 1].push(key);
-                return rows;
-              }, [])
-              .map((row: number[], rowIndex: number) => (
-                <View key={rowIndex} style={styles.gridRow}>
-                  {row.map((num) => (
+            {[...Array(2).keys()].map((ri) => (
+              <View key={ri} style={styles.gridRow}>
+                {[1, 2, 3, 4, 5].map((n) => {
+                  const num = ri * 5 + n;
+                  return (
                     <TouchableOpacity
                       key={num}
                       style={[
@@ -449,6 +453,7 @@ const ShiftDetailScreen = ({
                         shift.cognition === num && styles.numberBtnActive,
                       ]}
                       onPress={() => updateField("cognition", num)}
+                      disabled={isOwner}
                     >
                       <Text
                         style={[
@@ -459,15 +464,16 @@ const ShiftDetailScreen = ({
                         {num}
                       </Text>
                     </TouchableOpacity>
-                  ))}
-                </View>
-              ))}
+                  );
+                })}
+              </View>
+            ))}
           </View>
         </View>
 
-        {/* --- TOALETA I SEN --- */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🚽 Toaleta i Sen</Text>
+        {/* FIZJOLOGIA */}
+        <View style={[styles.section, isOwner && { opacity: 0.7 }]}>
+          <Text style={styles.sectionTitle}>🚽 Fizjologia</Text>
           <View style={styles.rowSpread}>
             <TouchableOpacity
               style={[
@@ -475,6 +481,7 @@ const ShiftDetailScreen = ({
                 shift.toiletUrine && styles.bigToggleActive,
               ]}
               onPress={() => updateField("toiletUrine", !shift.toiletUrine)}
+              disabled={isOwner}
             >
               <Text style={styles.bigToggleIcon}>💧</Text>
               <Text
@@ -492,6 +499,7 @@ const ShiftDetailScreen = ({
                 shift.toiletBowel && styles.bigToggleActive,
               ]}
               onPress={() => updateField("toiletBowel", !shift.toiletBowel)}
+              disabled={isOwner}
             >
               <Text style={styles.bigToggleIcon}>💩</Text>
               <Text
@@ -504,18 +512,25 @@ const ShiftDetailScreen = ({
               </Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.label}>Drzemki:</Text>
-          <View style={styles.addItemRow}>
-            <TextInput
-              style={[styles.inputSmall, { flex: 1 }]}
-              placeholder="Godziny (np. 14:00 - 14:30)"
-              value={newNap}
-              onChangeText={setNewNap}
-            />
-            <TouchableOpacity style={styles.addBtnSmall} onPress={addNap}>
-              <MaterialCommunityIcons name="plus" size={24} color="white" />
-            </TouchableOpacity>
-          </View>
+        </View>
+
+        {/* SEN */}
+        <View style={[styles.section, isOwner && { opacity: 0.7 }]}>
+          <Text style={styles.sectionTitle}>😴 Sen</Text>
+          {!isOwner && (
+            <View style={styles.addItemRow}>
+              <TextInput
+                style={[styles.inputSmall, { flex: 1 }]}
+                placeholder="Godziny"
+                value={newNap}
+                onChangeText={setNewNap}
+                editable={!isOwner}
+              />
+              <TouchableOpacity style={styles.addBtnSmall} onPress={addNap}>
+                <MaterialCommunityIcons name="plus" size={24} color="white" />
+              </TouchableOpacity>
+            </View>
+          )}
           <View style={styles.listContainer}>
             {shift.sleepLogs?.map((nap, i) => (
               <View key={i} style={styles.cardItem}>
@@ -528,62 +543,45 @@ const ShiftDetailScreen = ({
                   />
                   <Text style={styles.cardText}>{nap}</Text>
                 </View>
-                <TouchableOpacity
-                  onPress={() => removeNap(i)}
-                  style={styles.trashBtn}
-                >
-                  <MaterialCommunityIcons
-                    name="trash-can-outline"
-                    size={20}
-                    color="#FF5252"
-                  />
-                </TouchableOpacity>
+                {!isOwner && (
+                  <TouchableOpacity
+                    onPress={() => removeNap(i)}
+                    style={styles.trashBtn}
+                  >
+                    <MaterialCommunityIcons
+                      name="trash-can-outline"
+                      size={20}
+                      color="#FF5252"
+                    />
+                  </TouchableOpacity>
+                )}
               </View>
             ))}
           </View>
         </View>
 
-        {/* --- JEDZENIE I PICIE --- */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🍽️ Jedzenie i Picie</Text>
-          <Text style={styles.label}>Apetyt:</Text>
-          <View style={styles.appetiteRow}>
-            {[
-              { k: "bad", i: "🤢", l: "Słaby" },
-              { k: "normal", i: "😐", l: "Średni" },
-              { k: "good", i: "😋", l: "Dobry" },
-            ].map((ap: any) => (
-              <TouchableOpacity
-                key={ap.k}
-                style={[
-                  styles.emojiBtn,
-                  shift.appetite === ap.k && styles.emojiBtnActive,
-                ]}
-                onPress={() => updateField("appetite", ap.k)}
-              >
-                <Text style={styles.emoji}>{ap.i}</Text>
-                <Text style={styles.emojiLabel}>{ap.l}</Text>
+        {/* JEDZENIE */}
+        <View style={[styles.section, isOwner && { opacity: 0.7 }]}>
+          <Text style={styles.sectionTitle}>🍽️ Posiłki i Płyny</Text>
+          {!isOwner && (
+            <View style={styles.addItemRow}>
+              <TextInput
+                style={[styles.inputSmall, { width: 80, marginRight: 5 }]}
+                placeholder="Godz."
+                value={newFoodTime}
+                onChangeText={setNewFoodTime}
+              />
+              <TextInput
+                style={[styles.inputSmall, { flex: 1 }]}
+                placeholder="Co zjedzono?"
+                value={newFoodDesc}
+                onChangeText={setNewFoodDesc}
+              />
+              <TouchableOpacity style={styles.addBtnSmall} onPress={addFood}>
+                <MaterialCommunityIcons name="plus" size={24} color="white" />
               </TouchableOpacity>
-            ))}
-          </View>
-          <Text style={styles.label}>Posiłki:</Text>
-          <View style={styles.addItemRow}>
-            <TextInput
-              style={[styles.inputSmall, { width: 80, marginRight: 5 }]}
-              placeholder="Godz."
-              value={newFoodTime}
-              onChangeText={setNewFoodTime}
-            />
-            <TextInput
-              style={[styles.inputSmall, { flex: 1 }]}
-              placeholder="Co zjedzono?"
-              value={newFoodDesc}
-              onChangeText={setNewFoodDesc}
-            />
-            <TouchableOpacity style={styles.addBtnSmall} onPress={addFood}>
-              <MaterialCommunityIcons name="plus" size={24} color="white" />
-            </TouchableOpacity>
-          </View>
+            </View>
+          )}
           <View style={styles.listContainer}>
             {shift.foodLogs?.map((food, i) => (
               <View key={i} style={styles.cardItem}>
@@ -595,93 +593,97 @@ const ShiftDetailScreen = ({
                     {food.description}
                   </Text>
                 </View>
-                <TouchableOpacity
-                  onPress={() => removeFood(i)}
-                  style={styles.trashBtn}
-                >
-                  <MaterialCommunityIcons
-                    name="trash-can-outline"
-                    size={20}
-                    color="#FF5252"
-                  />
-                </TouchableOpacity>
+                {!isOwner && (
+                  <TouchableOpacity
+                    onPress={() => removeFood(i)}
+                    style={styles.trashBtn}
+                  >
+                    <MaterialCommunityIcons
+                      name="trash-can-outline"
+                      size={20}
+                      color="#FF5252"
+                    />
+                  </TouchableOpacity>
+                )}
               </View>
             ))}
           </View>
-          <Text style={styles.label}>Nawodnienie (dodaj ilość):</Text>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 10,
-              marginBottom: 10,
-            }}
-          >
-            <TextInput
-              style={[styles.inputSmall, { flex: 1, marginBottom: 0 }]}
-              placeholder="Rodzaj (np. Woda)"
-              value={drinkType}
-              onChangeText={setDrinkType}
-            />
-          </View>
-          <View style={styles.rowCenter}>
-            {[0.25, 0.5, 1.0].map((amt) => (
-              <TouchableOpacity
-                key={amt}
-                style={styles.drinkBtn}
-                onPress={() => addDrink(amt)}
-              >
-                <Text style={styles.drinkBtnText}>+ {amt} szkl.</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+
+          <Text style={[styles.label, { marginTop: 15 }]}>Nawodnienie:</Text>
+          {!isOwner && (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 10,
+              }}
+            >
+              <TextInput
+                style={[styles.inputSmall, { flex: 1, marginBottom: 0 }]}
+                placeholder="Rodzaj napoju"
+                value={drinkType}
+                onChangeText={setDrinkType}
+              />
+            </View>
+          )}
+          {!isOwner && (
+            <View style={styles.rowCenter}>
+              {[0.25, 0.5, 1.0].map((amt) => (
+                <TouchableOpacity
+                  key={amt}
+                  style={styles.drinkBtn}
+                  onPress={() => addDrink(amt)}
+                >
+                  <Text style={styles.drinkBtnText}>+ {amt}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
           <View style={styles.listContainer}>
             {shift.intakeLogs?.map((log, i) => (
               <View key={i} style={styles.cardItem}>
                 <View style={styles.cardContentRow}>
-                  <MaterialCommunityIcons
-                    name="cup-water"
-                    size={20}
-                    color="#1976D2"
-                    style={{ marginRight: 10 }}
-                  />
                   <Text style={styles.cardText}>
-                    <Text style={{ fontWeight: "bold" }}>{log.type}</Text>:{" "}
-                    {log.amount} szkl.
+                    {log.type}: {log.amount} szkl.
                   </Text>
                 </View>
-                <TouchableOpacity
-                  onPress={() => removeDrink(i)}
-                  style={styles.trashBtn}
-                >
-                  <MaterialCommunityIcons
-                    name="trash-can-outline"
-                    size={20}
-                    color="#FF5252"
-                  />
-                </TouchableOpacity>
+                {!isOwner && (
+                  <TouchableOpacity
+                    onPress={() => removeDrink(i)}
+                    style={styles.trashBtn}
+                  >
+                    <MaterialCommunityIcons
+                      name="trash-can-outline"
+                      size={20}
+                      color="#FF5252"
+                    />
+                  </TouchableOpacity>
+                )}
               </View>
             ))}
           </View>
         </View>
 
-        {/* --- NASTRÓJ --- */}
-        <View style={styles.section}>
+        {/* NASTRÓJ */}
+        <View style={[styles.section, isOwner && { opacity: 0.7 }]}>
           <Text style={styles.sectionTitle}>🧠 Nastrój</Text>
-          <View style={styles.addItemRow}>
-            <TextInput
-              style={[styles.inputSmall, { flex: 1 }]}
-              placeholder="Inny nastrój? Dodaj..."
-              value={customMood}
-              onChangeText={setCustomMood}
-            />
-            <TouchableOpacity
-              style={styles.addBtnSmall}
-              onPress={addCustomMood}
-            >
-              <MaterialCommunityIcons name="plus" size={24} color="white" />
-            </TouchableOpacity>
-          </View>
+          {!isOwner && (
+            <View style={styles.addItemRow}>
+              <TextInput
+                style={[styles.inputSmall, { flex: 1 }]}
+                placeholder="Inny nastrój..."
+                value={customMood}
+                onChangeText={setCustomMood}
+              />
+              <TouchableOpacity
+                style={styles.addBtnSmall}
+                onPress={addCustomMood}
+              >
+                <MaterialCommunityIcons name="plus" size={24} color="white" />
+              </TouchableOpacity>
+            </View>
+          )}
           <View style={styles.tagsContainer}>
             {availableMoods.map((m) => (
               <TouchableOpacity
@@ -691,6 +693,7 @@ const ShiftDetailScreen = ({
                   shift.moods?.includes(m) && styles.tagActive,
                 ]}
                 onPress={() => toggleMood(m)}
+                disabled={isOwner}
               >
                 <Text
                   style={[
@@ -705,30 +708,31 @@ const ShiftDetailScreen = ({
           </View>
           <TextInput
             style={[styles.inputArea, { marginTop: 15, minHeight: 60 }]}
-            placeholder="Dodatkowy opis nastroju..."
+            placeholder="Opis nastroju..."
             multiline
             value={moodNote}
             onChangeText={setMoodNote}
             onBlur={saveTextInputs}
+            editable={!isOwner}
           />
         </View>
 
-        {/* --- UWAGI --- */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📝 Dodatkowe uwagi</Text>
+        <View style={[styles.section, isOwner && { opacity: 0.7 }]}>
+          <Text style={styles.sectionTitle}>📝 Uwagi</Text>
           <TextInput
             style={styles.inputArea}
-            placeholder="Inne ważne informacje..."
+            placeholder="Dodatkowe uwagi..."
             multiline
             value={notes}
             onChangeText={setNotes}
             onBlur={saveTextInputs}
+            editable={!isOwner}
           />
         </View>
 
         <View style={{ height: 20 }} />
 
-        {/* PRZYCISK KOŃCZENIA (TYLKO DLA OPIEKUNA) */}
+        {/* PRZYCISKI AKCJI */}
         {!isOwner && (
           <TouchableOpacity
             style={styles.finishBtn}
@@ -738,7 +742,6 @@ const ShiftDetailScreen = ({
           </TouchableOpacity>
         )}
 
-        {/* PRZYCISK USUWANIA (TYLKO DLA SZEFA) */}
         {isOwner && (
           <TouchableOpacity
             style={styles.deleteBtn}
@@ -774,8 +777,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 30,
   },
+  backBtn: { position: "absolute", top: 0, left: 0, padding: 10, zIndex: 10 },
 
-  // START SCREEN STYLES
   startTitle: {
     fontSize: 24,
     fontWeight: "bold",
