@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "635508603865",
+    "project_id": "opieka-plus-app",
+    "storage_bucket": "opieka-plus-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:635508603865:android:6439ee743e7979964eb7c8",
+        "android_client_info": {
+          "package_name": "com.pweat.OpiekaPlus"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "635508603865-f29cjemcqgjudt41jcll8ug2u1ai9vrh.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDWBQWSKqPOMgg-DUcKOZpYlk59SL_f9OE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "635508603865-f29cjemcqgjudt41jcll8ug2u1ai9vrh.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

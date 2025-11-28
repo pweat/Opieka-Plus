@@ -19,6 +19,7 @@ import {
   getDocs,
   doc,
   getDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { useIsFocused } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -26,6 +27,9 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 // Importujemy komponenty Dashboardów
 import OwnerDashboard from "../components/OwnerDashboard";
 import CaregiverDashboard from "../components/CaregiverDashboard";
+
+// Importujemy funkcję powiadomień (NOWOŚĆ)
+import { registerForPushNotificationsAsync } from "../utils/notifications";
 
 interface UserProfile {
   uid: string;
@@ -39,14 +43,39 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [patients, setPatients] = useState<any[]>([]);
   const [shifts, setShifts] = useState<any[]>([]);
+
   const isFocused = useIsFocused();
 
   useEffect(() => {
-    if (isFocused) fetchData();
+    if (isFocused) {
+      fetchData();
+      // Rejestracja powiadomień przy wejściu na ekran główny
+      registerNotifications();
+    }
   }, [isFocused]);
 
+  // Funkcja do zapisu tokena w bazie
+  const registerNotifications = async () => {
+    const user = auth.currentUser;
+    if (user) {
+      const token = await registerForPushNotificationsAsync();
+      if (token) {
+        // Zapisujemy token w dokumencie użytkownika
+        // Dzięki temu inni użytkownicy będą mogli wysłać mu powiadomienie
+        try {
+          await updateDoc(doc(db, "users", user.uid), {
+            pushToken: token,
+          });
+          console.log("Token zapisany w bazie:", token);
+        } catch (e) {
+          console.log("Błąd zapisu tokena:", e);
+        }
+      }
+    }
+  };
+
   const fetchData = async () => {
-    // setLoading(true); // Opcjonalnie: można wyłączyć, żeby nie migało przy odświeżaniu "pociągnięciem"
+    // setLoading(true); // Wyłączone, żeby nie migało przy powrocie
     const user = auth.currentUser;
     if (user) {
       const userDoc = await getDoc(doc(db, "users", user.uid));
@@ -140,18 +169,18 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
         <OwnerDashboard
           patients={patients}
           navigation={navigation}
-          onRefresh={fetchData} // <--- PRZEKAZUJEMY FUNKCJĘ ODŚWIEŻANIA
+          onRefresh={fetchData}
         />
       ) : (
         <CaregiverDashboard
           patients={patients}
           shifts={shifts}
           navigation={navigation}
-          onRefresh={fetchData} // <--- PRZEKAZUJEMY FUNKCJĘ ODŚWIEŻANIA
+          onRefresh={fetchData}
         />
       )}
 
-      {/* FAB */}
+      {/* FAB - Przycisk dodawania */}
       {userProfile?.role === "opiekun_glowny" && patients.length > 0 && (
         <TouchableOpacity
           style={styles.fab}
